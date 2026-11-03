@@ -1,0 +1,1775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wurm Map Generator</title>
+<style>
+:root {
+  --bg: #f4f1ea;
+  --panel: #fffdf8;
+  --panel-2: #f0ebe0;
+  --line: #ddd5c4;
+  --text: #2b2822;
+  --muted: #776f61;
+  --accent: #3f6f4a;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2ecdf;
+  --warn: #9a5a12;
+  --warn-soft: #fbefd9;
+  --error: #a03a2c;
+  --map-bg: #1d3150;
+  --shadow: 0 1px 2px rgba(40, 30, 10, .06), 0 4px 16px rgba(40, 30, 10, .06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171a17;
+    --panel: #20241f;
+    --panel-2: #282d27;
+    --line: #363c34;
+    --text: #e8e6df;
+    --muted: #9fa293;
+    --accent: #79b386;
+    --accent-ink: #10180f;
+    --accent-soft: #2a3a2c;
+    --warn: #e0a656;
+    --warn-soft: #3a2f1e;
+    --error: #e5826f;
+    --map-bg: #0f1a2c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171a17; --panel: #20241f; --panel-2: #282d27; --line: #363c34; --text: #e8e6df;
+  --muted: #9fa293; --accent: #79b386; --accent-ink: #10180f; --accent-soft: #2a3a2c;
+  --warn: #e0a656; --warn-soft: #3a2f1e; --error: #e5826f; --map-bg: #0f1a2c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+button, input, select { font: inherit; color: inherit; }
+
+.app { display: grid; grid-template-columns: 360px minmax(0, 1fr); height: 100vh; }
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 18px 18px 28px;
+}
+.main { overflow-y: auto; padding: 18px 24px 32px; }
+
+h1 {
+  font: 600 19px/1.2 Georgia, "Iowan Old Style", serif;
+  margin: 0 0 2px;
+  letter-spacing: .2px;
+}
+.subtitle { color: var(--muted); font-size: 12.5px; margin-bottom: 18px; }
+.section-title {
+  align-items: center; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 18px 0 8px;
+}
+
+.styles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.style-card {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); cursor: pointer; text-align: left;
+  transition: border-color .12s, background .12s;
+}
+.style-card:hover { border-color: var(--accent); }
+.style-card[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.style-card svg { flex: none; width: 30px; height: 30px; border-radius: 6px; }
+.style-card span { font-weight: 550; font-size: 13px; line-height: 1.2; }
+.style-desc { color: var(--muted); font-size: 12.5px; margin: 8px 2px 0; min-height: 36px; }
+.modified {
+  display: none; font-size: 11px; color: var(--warn); background: var(--warn-soft);
+  padding: 1px 7px; border-radius: 10px; margin-left: 6px; vertical-align: 1px;
+}
+.modified.on { display: inline-block; }
+
+.row { display: flex; gap: 8px; align-items: center; }
+.field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.field label, .lbl { font-size: 12.5px; color: var(--muted); }
+input[type="number"], input[type="text"], select {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel); min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+.btn {
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); cursor: pointer; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.small { padding: 4px 9px; font-size: 12.5px; }
+
+details.group { border-top: 1px solid var(--line); padding: 4px 0; }
+details.group > summary {
+  list-style: none; cursor: pointer; padding: 9px 0 6px;
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  display: flex; justify-content: space-between;
+}
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "▾"; transition: transform .15s; }
+details.group:not([open]) > summary::after { transform: rotate(-90deg); }
+
+.param { margin: 6px 0 12px; }
+.param-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.param-head .name { cursor: help; }
+.param-head output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.5px; }
+.param.changed .param-head .name::after { content: " •"; color: var(--warn); }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 5px; }
+.seg button {
+  flex: 1; border: 0; background: transparent; padding: 5px 4px; cursor: pointer; font-size: 12.5px;
+  border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); font-weight: 600; }
+.seg.grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+.seg.grid button { border-bottom: 1px solid var(--line); }
+.seg.grid button:nth-child(4n) { border-right: 0; }
+.seg.grid button:nth-last-child(-n + 4) { border-bottom: 0; }
+
+.toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.toolbar .status { color: var(--muted); font-size: 12.5px; margin-right: auto; }
+.toolbar .status.err { color: var(--error); }
+
+.viewer-wrap {
+  /* Map column sized by fitViewer(); the cards sit right beside it and use spare width, up to 380px. */
+  display: grid; grid-template-columns: auto minmax(260px, 380px); gap: 18px; align-items: start;
+  justify-content: start;
+}
+.viewer {
+  /* Sized by fitViewer() to the largest square that fits; these are the no-script defaults. */
+  position: relative; width: 100%; max-width: min(820px, calc(100vh - 120px));
+  aspect-ratio: 1; flex: none; background: var(--map-bg); border-radius: 12px; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.viewer img {
+  width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair;
+}
+.viewer .empty {
+  position: absolute; inset: 0; display: grid; place-items: center; color: #c9d3e3; font-size: 14px;
+}
+.viewer .empty[hidden], .viewer img[hidden] { display: none; }
+.viewer .busy {
+  position: absolute; inset: 0; display: none; place-items: center;
+  background: rgba(10, 20, 35, .35); color: #fff; font-weight: 600; backdrop-filter: blur(1px);
+}
+.viewer.loading .busy { display: grid; }
+.spawn {
+  position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  border: 2px solid #fff; color: #fff; font: 700 11px/18px system-ui, sans-serif; text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .5); z-index: 3; cursor: grab; touch-action: none;
+}
+.spawn { transform: scale(calc(var(--s, 1) / var(--z, 1))); }
+.spawn:hover { --s: 1.15; }
+.spawn.dragging { cursor: grabbing; --s: 1.25; box-shadow: 0 3px 10px rgba(0, 0, 0, .6); }
+.zoom { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+.viewer.panning, .viewer.panning img { cursor: grabbing; }
+.zoombar {
+  position: absolute; right: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; gap: 4px;
+  background: rgba(20, 22, 18, .78); border-radius: 8px; padding: 4px; color: #f1efe8; font-size: 12px;
+}
+.zoombar[hidden] { display: none; }
+.zoombar button {
+  min-width: 26px; height: 24px; border: 0; border-radius: 5px; background: rgba(255, 255, 255, .12);
+  color: inherit; font: 600 13px system-ui, sans-serif; cursor: pointer; padding: 0 6px;
+}
+.zoombar button:hover { background: rgba(255, 255, 255, .24); }
+.zoombar span { min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.hover {
+  position: absolute; pointer-events: none; display: none; white-space: nowrap;
+  background: rgba(20, 22, 18, .88); color: #f1efe8; padding: 5px 8px; border-radius: 6px; font-size: 12px;
+  transform: translate(12px, 12px);
+}
+.hover b { font-weight: 600; }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
+.card + .card { margin-top: 14px; }
+.card h2 { font-size: 13px; margin: 0 0 10px; font-weight: 650; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.kpi .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kpi .k { font-size: 11.5px; color: var(--muted); }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 10px; background: var(--panel-2); }
+.bar div { height: 100%; }
+.legend { display: grid; gap: 3px; font-size: 12.5px; }
+.legend div { display: flex; align-items: center; gap: 7px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.legend .pct { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.create { margin-top: 18px; max-width: 820px; }
+.create .grid { display: grid; grid-template-columns: 1.3fr 1fr 1.2fr; gap: 10px; margin-bottom: 10px; }
+.create .opts { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 12px; }
+.note { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
+.warnbox { font-size: 12.5px; color: var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 7px 10px; margin-bottom: 10px; display: none; }
+.warnbox.on { display: block; }
+.log {
+  margin: 12px 0 0; max-height: 220px; overflow: auto; background: var(--panel-2); border-radius: 8px;
+  padding: 9px 11px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; display: none;
+}
+.log.on { display: block; }
+.log .err { color: var(--error); }
+.done-msg { margin-top: 10px; font-size: 13px; display: none; }
+.checks { display: grid; gap: 6px; font-size: 12.5px; }
+.check { display: flex; gap: 7px; align-items: flex-start; line-height: 1.35; }
+.check .dot {
+  flex: none; width: 16px; height: 16px; border-radius: 50%; margin-top: 1px;
+  font: 700 10px/16px system-ui, sans-serif; text-align: center; color: #fff;
+}
+.check.good .dot { background: #3f8a52; }
+.check.info .dot { background: #6f7b8a; }
+.check.warn .dot { background: #c98a1d; }
+.check.bad .dot { background: #c0473a; }
+.dist { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.dist th, .dist td { padding: 3px 4px; text-align: right; border-bottom: 1px solid var(--line); }
+.dist th:first-child, .dist td:first-child { text-align: left; color: var(--muted); font-weight: 400; }
+.dist th { font-weight: 600; font-size: 11.5px; }
+.dist td.warn { color: var(--warn); }
+.dist td.bad { color: var(--error); font-weight: 600; }
+.ore-legend .pct { min-width: 46px; text-align: right; }
+.done-msg.on { display: block; }
+.preset-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.preset-row select, .preset-row input[type=text] { flex: 1; min-width: 0; }
+.preset-meta { font-size: 12px; color: var(--muted); margin: 0 0 8px; min-height: 15px; }
+.gallery {
+  position: absolute; inset: 0; z-index: 5; display: none; flex-direction: column;
+  background: rgba(14, 22, 34, .94); padding: 12px; gap: 10px;
+}
+.gallery.on { display: flex; }
+.gallery-head { display: flex; align-items: center; gap: 8px; color: #e8edf5; font-size: 13px; }
+.gallery-head b { margin-right: auto; font-weight: 600; }
+.gallery-head .btn { background: rgba(255, 255, 255, .1); color: #fff; border-color: rgba(255, 255, 255, .25); }
+.gallery-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; }
+.thumb {
+  position: relative; border: 2px solid transparent; border-radius: 8px; overflow: hidden; padding: 0;
+  background: #24364f; cursor: pointer; min-height: 0;
+}
+.thumb:hover, .thumb:focus-visible { border-color: #fff; outline: none; }
+.thumb img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: pixelated; }
+.thumb .cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; text-align: left;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .75)); color: #fff; font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.thumb .cap .bad { color: #ff9b8f; font-weight: 600; }
+.thumb .cap .warn { color: #ffd27a; }
+.thumb .wait { position: absolute; inset: 0; display: grid; place-items: center; color: #9fb0c8; font-size: 12px; }
+.thumb .pin {
+  position: absolute; top: 5px; right: 5px; z-index: 1; font: 600 11px system-ui, sans-serif; padding: 2px 7px;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, .5); background: rgba(0, 0, 0, .45); color: #fff; cursor: pointer;
+}
+.thumb .pin[aria-pressed="true"] { background: #e8b13a; color: #1b1b1b; border-color: #e8b13a; }
+.thumb.pinned { border-color: #e8b13a; }
+.compare { flex: 1; min-height: 0; display: none; grid-template-columns: 1fr 1fr; gap: 10px; }
+.compare.on { display: grid; }
+.compare figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; color: #e8edf5; font-size: 12.5px; }
+.compare img { width: 100%; flex: 1; min-height: 0; object-fit: contain; image-rendering: pixelated; background: #24364f; border-radius: 8px; }
+.compare figcaption { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.compare figcaption .btn { margin-left: auto; }
+
+#highlight { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+#highlight .halo { stroke: rgba(0, 0, 0, .55); stroke-width: 5; fill: none; }
+#highlight .ink { stroke-width: 2.5; fill: none; }
+#highlight .ring { stroke-dasharray: 6 4; }
+#highlight * { vector-effect: non-scaling-stroke; }
+#highlight text { font: 600 calc(12px / var(--z, 1)) system-ui, sans-serif; fill: #fff; paint-order: stroke; stroke: rgba(0, 0, 0, .75); stroke-width: 3px; }
+.checks .check[data-i], .dist td[data-s], .dist th[data-s], .dist td.rowlabel { cursor: default; }
+.checks .check.lit { background: var(--accent-soft); border-radius: 6px; }
+.checks .check { padding: 2px 4px; margin: -2px -4px; }
+.dist td.lit, .dist th.lit { background: var(--accent-soft); }
+#paint { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; touch-action: none; }
+#paint.off { pointer-events: none; }
+.paintbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 12px; font-size: 12.5px; }
+.paintbar .seg { margin: 0; }
+.paintbar .seg button { padding: 5px 9px; font-size: 12.5px; }
+.paintbar .tools { display: none; flex-wrap: wrap; align-items: center; gap: 8px; }
+.paintbar .tools.on { display: flex; }
+.paintbar label { color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.paintbar input[type=range] { width: 90px; }
+.paintbar .count { color: var(--muted); }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+.base-box { border: 1px solid var(--line); border-radius: 9px; padding: 9px; margin-bottom: 10px; display: none; }
+.base-box.on { display: block; }
+.base-box .row { margin-bottom: 6px; }
+.base-info { font-size: 12px; color: var(--muted); margin: 4px 0 6px; }
+.pm .grid { grid-template-columns: 1.3fr 1fr 1fr 1fr; }
+.pm .links { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; color: inherit; }
+.btn.disabled { opacity: .5; pointer-events: none; }
+
+@media (min-width: 1101px) {
+  /* Keep the map in view while scrolling the cards beside it (hover highlights draw on it). */
+  .viewer { position: sticky; top: 12px; }
+}
+@media (max-width: 1100px) {
+  .viewer-wrap { grid-template-columns: minmax(0, 1fr); }
+  .viewer { max-width: 100%; }
+}
+@media (max-width: 780px) {
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+  .main { padding: 16px; }
+  .create .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1>Wurm Map Generator</h1>
+    <div class="subtitle">Pick a style, tune it, preview, then create a server world.</div>
+
+    <div class="section-title row" style="justify-content:space-between">
+      <span>Style <span class="modified" id="modified">modified</span></span>
+      <button class="btn small" id="surprise" title="Random style and seed">Surprise me</button>
+    </div>
+    <div class="styles" id="styles"></div>
+    <p class="style-desc" id="style-desc"></p>
+
+    <div class="section-title">Presets</div>
+    <div class="preset-row">
+      <select id="preset" aria-label="Saved presets"></select>
+      <button class="btn small" id="preset-load">Load</button>
+      <button class="btn small" id="preset-delete" title="Delete this preset">Delete</button>
+    </div>
+    <p class="preset-meta" id="preset-meta"></p>
+    <div class="preset-row">
+      <input id="preset-name" type="text" placeholder="Preset name" maxlength="40" autocomplete="off" aria-label="Preset name">
+      <button class="btn small" id="preset-save">Save current</button>
+    </div>
+    <label class="toggle" style="margin-bottom:6px"><input type="checkbox" id="preset-seed"> Include seed &amp; map size</label>
+
+    <div class="section-title">Seed &amp; size</div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field">
+        <label for="seed">Seed</label>
+        <input id="seed" type="number" min="0" max="2147483647" step="1">
+      </div>
+      <button class="btn" id="shuffle" style="align-self:flex-end" title="Pick a random seed">Shuffle</button>
+      <button class="btn" id="gallery-open" style="align-self:flex-end" title="Compare nine seeds side by side">Gallery</button>
+    </div>
+    <div class="row" style="margin-bottom:6px">
+      <div class="field">
+        <label for="world-size">Map size</label>
+        <select id="world-size">
+          <option value="1024">1024 × 1024</option>
+          <option value="2048" selected>2048 × 2048</option>
+          <option value="4096">4096 × 4096</option>
+          <option value="8192">8192 × 8192</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="preview-size">Preview detail</label>
+        <select id="preview-size">
+          <option value="512" selected>Fast (512)</option>
+          <option value="1024">Detailed (1024)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section-title">Base terrain</div>
+    <div class="seg" role="group" aria-label="Base terrain" id="base-mode" style="margin-bottom:8px">
+      <button data-mode="generated" aria-pressed="true">Generated</button>
+      <button data-mode="imported" aria-pressed="false">Imported heightmap</button>
+    </div>
+    <div class="base-box" id="base-box">
+      <div class="row">
+        <div class="field">
+          <label for="hm-world">From a world</label>
+          <select id="hm-world"></select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:6px">
+        <label for="hm-file">Or upload a file (.png, .r16/.raw, .map)</label>
+        <input id="hm-file" type="file" accept=".png,.r16,.raw,.map">
+      </div>
+      <div class="base-info" id="hm-info">No heightmap chosen.</div>
+      <div class="param" id="hm-sea-wrap">
+        <div class="param-head"><span class="name" title="Grey level that becomes the water line. Heights above it scale up to Highest peak, below it down to Sea depth.">Water level in the image</span><output id="hm-sea-out"></output></div>
+        <input type="range" id="hm-sea" min="0" max="0.95" step="0.01" value="0.3" aria-label="Water level in the image">
+      </div>
+    </div>
+
+    <div id="groups"></div>
+
+    <div class="row" style="justify-content:space-between; margin-top:8px">
+      <label class="toggle"><input type="checkbox" id="auto" checked> Auto-preview</label>
+      <button class="btn small" id="reset">Reset to style</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <button class="btn primary" id="generate">Generate preview</button>
+      <button class="btn" id="explore" title="Walk or fly around this preview in 3D (Shift+click the map to start at a spot)">Explore in 3D</button>
+      <div class="status" id="status">Loading…</div>
+      <div class="seg" role="group" aria-label="Map view" id="view" style="margin:0">
+        <button data-view="terrain" aria-pressed="true">Terrain</button>
+        <button data-view="height" aria-pressed="false">Height</button>
+        <button data-view="ores" aria-pressed="false">Ores</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="show-spawns" checked> Spawn points</label>
+    </div>
+
+    <div class="paintbar">
+      <span>Paint</span>
+      <div class="seg" role="group" aria-label="Paint mode" id="paint-mode">
+        <button data-mode="off" aria-pressed="true">Off</button>
+        <button data-mode="sketch" aria-pressed="false" title="Paint rough land, sea and mountain areas; the generator fills in the detail">Sketch</button>
+        <button data-mode="edit" aria-pressed="false" title="Brush changes onto the generated map">Edit</button>
+      </div>
+      <div class="tools" id="sketch-tools">
+        <div class="seg" role="group" aria-label="Sketch brush" id="sketch-brush">
+          <button data-b="1" aria-pressed="false"><i class="swatch" style="background:#2f6fd6"></i>Sea</button>
+          <button data-b="2" aria-pressed="true"><i class="swatch" style="background:#5aa046"></i>Land</button>
+          <button data-b="3" aria-pressed="false"><i class="swatch" style="background:#9a8d7a"></i>Mountains</button>
+          <button data-b="4" aria-pressed="false"><i class="swatch" style="background:#d9c95a"></i>Lowland</button>
+          <button data-b="0" aria-pressed="false">Erase</button>
+        </div>
+        <button class="btn small" id="sketch-clear">Clear sketch</button>
+      </div>
+      <div class="tools" id="edit-tools">
+        <select id="edit-brush" aria-label="Edit brush">
+          <optgroup label="Height">
+            <option value="raise">Raise ground</option>
+            <option value="lower">Lower ground</option>
+            <option value="flatten">Flatten</option>
+          </optgroup>
+          <optgroup label="Surface">
+            <option value="forest">Plant forest</option>
+            <option value="clear">Clear trees</option>
+            <option value="grass">Grass</option>
+            <option value="clay">Clay</option>
+            <option value="sand">Sand</option>
+            <option value="tar">Tar</option>
+            <option value="gravel">Gravel</option>
+          </optgroup>
+          <optgroup label="Spawn points">
+            <option value="spawn:0">Move Jenn-Kellon spawn</option>
+            <option value="spawn:1">Move Mol-Rehan spawn</option>
+            <option value="spawn:2">Move Horde spawn</option>
+          </optgroup>
+        </select>
+        <label>Strength <input type="range" id="edit-strength" min="0.1" max="1" step="0.05" value="0.5"></label>
+        <button class="btn small" id="edit-undo">Undo</button>
+        <button class="btn small" id="edit-clear">Clear edits</button>
+        <span class="count" id="edit-count"></span>
+      </div>
+      <label class="tools" id="brush-size-wrap">Brush <input type="range" id="brush-size" min="4" max="300" step="1" value="40"><output id="brush-size-out"></output></label>
+    </div>
+
+    <div class="viewer-wrap">
+      <div class="viewer" id="viewer">
+        <div class="empty" id="empty">No preview yet</div>
+        <div class="zoom" id="zoom">
+          <img id="map" alt="Generated map preview" hidden>
+          <svg id="highlight" aria-hidden="true" preserveAspectRatio="none"></svg>
+          <div id="spawns"></div>
+          <canvas id="paint" class="off" width="512" height="512"></canvas>
+        </div>
+        <div class="zoombar" id="zoombar" hidden>
+          <button id="zoom-in" title="Zoom in (mouse wheel)" aria-label="Zoom in">+</button>
+          <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+          <button id="zoom-fit" title="Show the whole map (double-click the map)">Fit</button>
+          <span id="zoom-level">100%</span>
+        </div>
+        <div class="hover" id="hover"></div>
+        <div class="busy">Generating…</div>
+        <div class="gallery" id="gallery">
+          <div class="gallery-head">
+            <b>Pick a seed</b><span id="gallery-status"></span>
+            <button class="btn small" id="compare-back" hidden>Back to all</button>
+            <button class="btn small" id="gallery-more">New seeds</button>
+            <button class="btn small" id="gallery-close">Close</button>
+          </div>
+          <div class="gallery-grid" id="gallery-grid"></div>
+          <div class="compare" id="compare"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>Playability</h2>
+          <div class="checks" id="checks"><div style="color:var(--muted)">–</div></div>
+          <table class="dist" id="dist"></table>
+        </div>
+        <div class="card">
+          <h2>Map summary</h2>
+          <div class="kpis">
+            <div class="kpi"><div class="v" id="k-land">–</div><div class="k">Land</div></div>
+            <div class="kpi"><div class="v" id="k-peak">–</div><div class="k">Highest</div></div>
+            <div class="kpi"><div class="v" id="k-deep">–</div><div class="k">Deepest</div></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><div class="v" id="k-rivers">–</div><div class="k">Rivers</div></div>
+            <div class="kpi"><div class="v" id="k-river-len">–</div><div class="k">River tiles</div></div>
+            <div class="kpi"><div class="v" id="k-lakes">–</div><div class="k">Lakes</div></div>
+          </div>
+          <div class="bar" id="bar"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="card">
+          <h2>Spawn points</h2>
+          <div class="legend" id="spawn-list"><div style="color:var(--muted)">–</div></div>
+        </div>
+        <div class="card">
+          <h2>Ores</h2>
+          <div class="legend ore-legend" id="ore-legend"><div style="color:var(--muted)">–</div></div>
+        </div>
+      </div>
+    </div>
+
+    <section class="card create">
+      <h2>Create world</h2>
+      <p class="note">Generates the full-size map with these settings into <code id="dist-path">dist</code>,
+        along with a playability report.</p>
+      <div class="grid">
+        <div class="field">
+          <label for="world-name">World folder name</label>
+          <input id="world-name" type="text" placeholder="MyWorld" maxlength="40" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="template">Copy databases from</label>
+          <select id="template"></select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="btn primary" id="create">Create world</button>
+        </div>
+      </div>
+      <div class="opts">
+        <label class="toggle"><input type="checkbox" id="set-name" checked> Use folder name as map name</label>
+        <label class="toggle"><input type="checkbox" id="force"> Replace existing map</label>
+        <label class="toggle" title="The Creative template ships 40 source springs/fountains and 5 Stones of Soulfall. Off: they are removed. On: they are moved onto the new land."><input type="checkbox" id="template-items"> Keep template springs, fountains &amp; Soulfall stones</label>
+      </div>
+      <div class="warnbox" id="exists-warn"></div>
+      <div class="log" id="log"></div>
+      <div class="done-msg" id="done-msg"></div>
+    </section>
+
+    <section class="card create pm">
+      <h2>Player map &amp; heightmap export</h2>
+      <p class="note">A printable map of a created world, with a lettered grid, spawn markers and a scale bar,
+        to share with your players. You can also download the world's heightmap to edit in an image editor
+        and import again.</p>
+      <div class="grid">
+        <div class="field">
+          <label for="pm-world">World</label>
+          <select id="pm-world"></select>
+        </div>
+        <div class="field">
+          <label for="pm-size">Image size</label>
+          <select id="pm-size">
+            <option value="1024">1024 px</option>
+            <option value="2048" selected>2048 px</option>
+            <option value="4096">4096 px</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="pm-grid">Grid</label>
+          <select id="pm-grid">
+            <option value="0">None</option>
+            <option value="128">128 tiles</option>
+            <option value="256" selected>256 tiles</option>
+            <option value="512">512 tiles</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="pm-title">Title</label>
+          <input id="pm-title" type="text" maxlength="40" placeholder="World name" autocomplete="off">
+        </div>
+      </div>
+      <div class="opts">
+        <label class="toggle"><input type="checkbox" id="pm-spawns" checked> Show spawn points</label>
+      </div>
+      <div class="links">
+        <a class="btn primary" id="pm-download" download>Download player map</a>
+        <a class="btn" id="hm-download" download>Download heightmap (16-bit PNG)</a>
+        <a class="btn" id="pm-explore" target="_blank">Explore in 3D</a>
+        <span class="note" id="pm-note" style="margin:0"></span>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const COMP_COLORS = {
+  "Water": "#3c6eaa", "Grass": "#608c3e", "Forest": "#285523", "Bushes": "#46692d", "Sand": "#d6c58c",
+  "Rock & cliff": "#807c76", "Tundra": "#96a082", "Steppe": "#a5a05f", "Marsh & reed": "#506e55",
+  "Peat & moss": "#5a4f3a", "Snow": "#e8ecf2", "Roads": "#a07d55",
+};
+const SPAWN_COLORS = [["J", "Jenn-Kellon", "#2f6fd6"], ["M", "Mol-Rehan", "#c93b2f"], ["L", "Horde of the Summoned", "#7b4bbf"]];
+const STYLE_ART = {
+  continent: '<ellipse cx="17" cy="17" rx="11" ry="9" fill="#6b9a4c"/><path d="M12 15l4-4 4 5 3-2" stroke="#8f8a7e" stroke-width="2" fill="none"/>',
+  archipelago: '<circle cx="9" cy="10" r="4" fill="#6b9a4c"/><circle cx="22" cy="9" r="3" fill="#6b9a4c"/><circle cx="15" cy="19" r="5" fill="#6b9a4c"/><circle cx="26" cy="22" r="3.5" fill="#6b9a4c"/><circle cx="8" cy="25" r="2.5" fill="#6b9a4c"/>',
+  fjords: '<path d="M5 6h24v22H5z" fill="#7f8f7a"/><path d="M5 12h12l-3 2h-9M29 18h-14l4 2h10M5 24h10l-2 2H5" fill="#2f5b8f"/>',
+  twin: '<ellipse cx="10" cy="13" rx="7" ry="8" fill="#6b9a4c"/><ellipse cx="25" cy="22" rx="7" ry="8" fill="#6b9a4c"/>',
+  inland_sea: '<circle cx="17" cy="17" r="12" fill="#6b9a4c"/><circle cx="17" cy="17" r="6" fill="#2f5b8f"/>',
+  highlands: '<ellipse cx="17" cy="18" rx="13" ry="11" fill="#6b9a4c"/><path d="M6 23l6-9 4 5 5-9 7 13z" fill="#9a958a"/><path d="M19.5 12.5l1.5-2.5 2 3z" fill="#fff"/>',
+  supercontinent: '<rect x="3" y="3" width="28" height="28" rx="9" fill="#6b9a4c"/><path d="M10 12h6v4h-6z" fill="#2f5b8f" rx="2"/><path d="M8 26c5-4 9 0 16-6" stroke="#2f5b8f" stroke-width="1.6" fill="none"/>',
+  peninsula: '<path d="M0 34V18c6-2 8 4 12 2s6-8 12-12 7-3 8 0-6 6-10 10-4 9-10 16z" fill="#6b9a4c"/>',
+  crescent: '<path d="M27 9A12 12 0 1 0 27 25 9 9 0 1 1 27 9z" fill="#6b9a4c"/>',
+  long_isle: '<path d="M8 30C6 24 14 16 18 10s8-8 9-6-3 8-7 14-8 13-12 12z" fill="#6b9a4c"/><path d="M14 20l4-6 3 2" stroke="#9a958a" stroke-width="2" fill="none"/>',
+  volcanic: '<circle cx="17" cy="18" r="12" fill="#6b9a4c"/><path d="M9 24l6-11h4l6 11z" fill="#8a7a6a"/><ellipse cx="17" cy="13.2" rx="2" ry="1" fill="#e0603a"/>',
+  broken_lands: '<path d="M4 6h12l-2 9H4zM19 5h11v12l-8-3zM5 19l9-1 1 11H5zM18 20l12-1v10H19z" fill="#6b9a4c"/>',
+  lake_district: '<circle cx="17" cy="17" r="13" fill="#6b9a4c"/><circle cx="12" cy="12" r="3" fill="#2f5b8f"/><circle cx="21" cy="14" r="2.2" fill="#2f5b8f"/><circle cx="15" cy="22" r="2.6" fill="#2f5b8f"/><circle cx="23" cy="22" r="1.6" fill="#2f5b8f"/>',
+  riverlands: '<circle cx="17" cy="17" r="13" fill="#6b9a4c"/><path d="M5 12c5 2 6 6 11 5s7 3 8 6 4 4 6 4M17 17c1-4 4-6 8-9" stroke="#2f5b8f" stroke-width="2" fill="none"/>',
+  desert: '<circle cx="17" cy="17" r="13" fill="#d6c58c"/><path d="M7 15c4-3 7 1 10-1s6-3 10 0M8 22c4-2 7 1 11-1s5-2 8 0" stroke="#b5a26a" stroke-width="1.5" fill="none"/>',
+  frozen_north: '<circle cx="17" cy="17" r="13" fill="#a7b3a0"/><path d="M7 24l6-10 4 5 4-7 7 12z" fill="#f2f4f2"/><path d="M10 26l2-4 2 4zM24 26l2-4 2 4z" fill="#3f6d45"/>',
+};
+
+const state = {
+  meta: null, style: "continent", values: {}, seed: 0, view: "terrain",
+  req: 0, result: null, types: null, heights: null, timer: null, polling: null,
+  // Non-slider options: imported heightmap, painted sketch (128x128 grid) and brush strokes.
+  base: "generated", heightmap: null, heightmapExact: false, sketch: new Uint8Array(128 * 128), strokes: [],
+  paint: "off",
+};
+const SKETCH = 128;
+const $ = (id) => document.getElementById(id);
+
+function fmtParam(p, v) {
+  if (p.kind === "choice") return v;
+  if (p.name === "river_width" || p.name === "vein_size") return `${Math.round(v)} tiles`;
+  if (p.name === "ore_amount") return `${Number(v).toFixed(1)}%`;
+  if (p.name === "ore_yield") return v > 0 ? `~${Math.round(v)} units` : "server default";
+  if (p.name === "ore_mountains") return `${Math.round(v * 100)}%`;
+  if (p.name === "bushes" || p.name === "fruit_trees") return v === 0 ? "none" : `×${Number(v).toFixed(2)}`;
+  if (p.name === "flowers") return `${Math.round(v * 100)}%`;
+  if (["conifers", "tundra", "steppe", "marsh"].includes(p.name)) return v === 0 ? "normal" : (v > 0 ? "+" : "") + Number(v).toFixed(2);
+  if (p.name === "snow_line") return v > 0 ? `${Math.round(v)} dm · ${(v / 10).toFixed(0)} m` : "no snow";
+  if (p.name === "spawn_clearing") return v > 0 ? `${Math.round(v)} tiles` : "off";
+  if (p.name.endsWith("height") || p.name.endsWith("depth")) return `${Math.round(v)} dm · ${(v / 10).toFixed(0)} m`;
+  if (["land"].includes(p.name)) return `${Math.round(v * 100)}%`;
+  if (["forest", "rivers", "lakes", "meander"].includes(p.name)) return `${Math.round(v * 100)}%`;
+  if (p.kind === "int") return String(Math.round(v));
+  const decimals = p.step >= 1 ? 0 : p.step >= 0.1 ? 1 : 2;
+  return Number(v).toFixed(decimals);
+}
+
+function styleValues(key) {
+  const base = {};
+  for (const p of state.meta.params) base[p.name] = p.default;
+  return Object.assign(base, state.meta.styles[key].values);
+}
+
+function buildStyles() {
+  const box = $("styles");
+  for (const [key, s] of Object.entries(state.meta.styles)) {
+    const b = document.createElement("button");
+    b.className = "style-card";
+    b.setAttribute("aria-label", s.label);
+    b.dataset.style = key;
+    b.innerHTML = `<svg viewBox="0 0 34 34"><rect width="34" height="34" fill="#2f5b8f"/>${STYLE_ART[key] || ""}</svg><span>${s.label}</span>`;
+    b.onclick = () => applyStyle(key);
+    box.appendChild(b);
+  }
+}
+
+function buildParams() {
+  const groups = {};
+  for (const p of state.meta.params) (groups[p.group] ||= []).push(p);
+  const root = $("groups");
+  for (const [name, params] of Object.entries(groups)) {
+    const d = document.createElement("details");
+    d.className = "group";
+    d.open = !["Climate", "Surface", "Terrain", "Ores", "Vegetation"].includes(name);
+    d.innerHTML = `<summary>${name}</summary>`;
+    for (const p of params) d.appendChild(buildParam(p));
+    root.appendChild(d);
+  }
+}
+
+function buildParam(p) {
+  const wrap = document.createElement("div");
+  wrap.className = "param";
+  wrap.dataset.param = p.name;
+  const head = document.createElement("div");
+  head.className = "param-head";
+  head.innerHTML = `<span class="name" title="${p.help}">${p.label}</span><output></output>`;
+  wrap.appendChild(head);
+  if (p.kind === "choice") {
+    const seg = document.createElement("div");
+    seg.className = p.choices.length > 4 ? "seg grid" : "seg";
+    for (const c of p.choices) {
+      const b = document.createElement("button");
+      b.textContent = c;
+      b.dataset.value = c;
+      b.onclick = () => setValue(p.name, c);
+      seg.appendChild(b);
+    }
+    wrap.appendChild(seg);
+  } else {
+    const r = document.createElement("input");
+    r.type = "range";
+    r.min = p.min; r.max = p.max; r.step = p.step;
+    r.setAttribute("aria-label", p.label);
+    r.oninput = () => setValue(p.name, Number(r.value));
+    r.ondblclick = () => setValue(p.name, styleValues(state.style)[p.name]);
+    wrap.appendChild(r);
+  }
+  return wrap;
+}
+
+function syncControls() {
+  const defaults = styleValues(state.style);
+  let modified = false;
+  for (const p of state.meta.params) {
+    const el = document.querySelector(`[data-param="${p.name}"]`);
+    const v = state.values[p.name];
+    el.querySelector("output").textContent = fmtParam(p, v);
+    if (p.kind === "choice") {
+      el.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.value === v)));
+    } else {
+      el.querySelector("input").value = v;
+    }
+    const changed = p.kind === "choice" ? v !== defaults[p.name] : Math.abs(v - defaults[p.name]) > 1e-9;
+    el.classList.toggle("changed", changed);
+    modified ||= changed;
+  }
+  $("modified").classList.toggle("on", modified);
+  document.querySelectorAll(".style-card").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.style === state.style)));
+  $("style-desc").textContent = state.meta.styles[state.style].desc;
+}
+
+function applyStyle(key) {
+  state.style = key;
+  state.values = styleValues(key);
+  syncControls();
+  schedulePreview(0);
+}
+
+function setValue(name, v) {
+  state.values[name] = v;
+  syncControls();
+  schedulePreview();
+}
+
+function schedulePreview(delay = 450) {
+  if (!$("auto").checked) return;
+  clearTimeout(state.timer);
+  state.timer = setTimeout(preview, delay);
+}
+
+function extraValues() {
+  const out = { heightmap: null, sketch: null, edits: [] };
+  if (state.base === "imported" && state.heightmap) {
+    out.heightmap = state.heightmap;
+    out.heightmap_sea = Number($("hm-sea").value);
+  }
+  if (state.sketch.some((c) => c)) out.sketch = toBase64(state.sketch);
+  out.edits = state.strokes.flat();
+  return out;
+}
+
+function toBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  return btoa(s);
+}
+
+function requestBody() {
+  return {
+    style: state.style, values: Object.assign({}, state.values, extraValues()), seed: Number($("seed").value) || 0,
+    world_size: Number($("world-size").value), preview_size: Number($("preview-size").value),
+  };
+}
+
+async function post(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function preview() {
+  const id = ++state.req;
+  $("viewer").classList.add("loading");
+  setStatus("Generating preview…");
+  try {
+    const r = await post("/api/preview", requestBody());
+    if (id !== state.req) return;
+    state.result = r;
+    state.types = new Int8Array(Uint8Array.from(atob(r.types), (c) => c.charCodeAt(0)).buffer);
+    const hb = Uint8Array.from(atob(r.heights), (c) => c.charCodeAt(0));
+    state.heights = new Int16Array(hb.buffer);
+    showResult();
+    setStatus(`Preview ${r.size}×${r.size} of a ${r.world_size}×${r.world_size} map · ${r.elapsed}s`);
+  } catch (e) {
+    if (id === state.req) setStatus(e.message, true);
+  } finally {
+    if (id === state.req) $("viewer").classList.remove("loading");
+  }
+}
+
+function setStatus(text, err = false) {
+  $("status").textContent = text;
+  $("status").classList.toggle("err", err);
+}
+
+function showResult() {
+  const r = state.result;
+  if (!r) return;
+  const img = $("map");
+  img.src = "data:image/png;base64," + r.images[state.view];
+  img.hidden = false;
+  $("empty").hidden = true;
+  $("zoombar").hidden = false;
+
+  const s = r.stats;
+  $("k-land").textContent = Math.round(s.land * 100) + "%";
+  $("k-peak").textContent = (s.peak / 10).toFixed(0) + " m";
+  $("k-deep").textContent = (s.deepest / 10).toFixed(0) + " m";
+  const w = s.water || { rivers: 0, river_tiles: 0, lakes: 0 };
+  $("k-rivers").textContent = w.rivers;
+  $("k-river-len").textContent = w.river_tiles >= 1000 ? (w.river_tiles / 1000).toFixed(1) + "k" : String(w.river_tiles);
+  $("k-lakes").textContent = w.lakes;
+  const entries = Object.entries(s.composition).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  $("bar").innerHTML = entries.map(([k, v]) => `<div style="width:${v * 100}%;background:${COMP_COLORS[k]}" title="${k} ${(v * 100).toFixed(1)}%"></div>`).join("");
+  $("legend").innerHTML = entries.map(([k, v]) =>
+    `<div><i style="background:${COMP_COLORS[k]}"></i>${k}<span class="pct">${(v * 100).toFixed(1)}%</span></div>`).join("");
+
+  renderReport(r.report);
+  renderOres(s.ores);
+
+  const ws = r.world_size;
+  $("spawns").innerHTML = $("show-spawns").checked ? r.spawns.map(([x, y], i) =>
+    `<div class="spawn" data-k="${i}" title="${SPAWN_COLORS[i][1]} spawn: drag to move" style="left:${(x / ws) * 100}%;top:${(y / ws) * 100}%;background:${SPAWN_COLORS[i][2]}">${SPAWN_COLORS[i][0]}</div>`).join("") : "";
+  $("spawn-list").innerHTML = r.spawns.length ? r.spawns.map(([x, y], i) =>
+    `<div><i style="background:${SPAWN_COLORS[i][2]}"></i>${SPAWN_COLORS[i][1]}<span class="pct">${x}, ${y}</span></div>`).join("")
+    : `<div style="color:var(--error)">No flat grass found for spawns</div>`;
+}
+
+const CHECK_MARK = { good: "✓", info: "i", warn: "!", bad: "×" };
+
+function renderReport(rep) {
+  if (!rep) return;
+  clearHighlight();
+  $("checks").innerHTML = rep.checks.map((c, i) =>
+    `<div class="check ${c.level}"${c.shapes && c.shapes.length ? ` data-i="${i}"` : ""}><span class="dot">${CHECK_MARK[c.level]}</span><span>${escapeHtml(c.text)}</span></div>`).join("");
+  if (!rep.spawns.length) { $("dist").innerHTML = ""; return; }
+  const labels = Object.keys(rep.spawns[0].distances);
+  const limits = Object.fromEntries((state.meta.report_limits || []).map((l) => [l.label, l]));
+  const cell = (label, d) => {
+    if (d === null || d === undefined) return `<td class="bad">none</td>`;
+    const lim = limits[label];
+    const cls = lim ? (d > lim.ok ? "bad" : d > lim.good ? "warn" : "") : "";
+    return `<td class="${cls}">${d}</td>`;
+  };
+  const short = (n) => n.split(" ")[0].replace("-Kellon", "").replace("-Rehan", "");
+  const tag = (html, i, lb) => html.replace(/^<td/, `<td data-s="${i}" data-l="${escapeHtml(lb)}"`);
+  $("dist").innerHTML = `<tr><th>Tiles to…</th>${rep.spawns.map((s, i) =>
+    `<th data-s="${i}" style="color:${SPAWN_COLORS[i][2]}">${short(s.name)}</th>`).join("")}</tr>`
+    + labels.map((lb) => `<tr><td class="rowlabel" data-l="${escapeHtml(lb)}">${lb}</td>${rep.spawns.map((s, i) => tag(cell(lb, s.distances[lb]), i, lb)).join("")}</tr>`).join("")
+    + `<tr><td class="rowlabel" data-l="flat">Flat land nearby</td>${rep.spawns.map((s, i) => `<td data-s="${i}" data-l="flat" class="${s.flat < 0.35 ? "warn" : ""}">${Math.round(s.flat * 100)}%</td>`).join("")}</tr>`;
+}
+
+// ---- Hover highlights: draw what a Playability entry refers to on the map ----
+
+function spawnLine(rep, i, label) {
+  const s = rep.spawns[i];
+  if (label === "flat") return { type: "circle", at: [s.x, s.y], r: rep.flat_radius || 40, label: `${Math.round(s.flat * 100)}% flat`, k: i };
+  const at = s.nearest && s.nearest[label];
+  return at ? { type: "line", a: [s.x, s.y], b: at, label: `${label} ${s.distances[label]}`, k: i } : null;
+}
+
+function shapesFor(el) {
+  const rep = state.result && state.result.report;
+  if (!rep) return [];
+  if (el.dataset.i !== undefined) return rep.checks[Number(el.dataset.i)].shapes || [];
+  const label = el.dataset.l;
+  const spawns = el.dataset.s !== undefined ? [Number(el.dataset.s)] : rep.spawns.map((_, i) => i);
+  const labels = label !== undefined ? [label] : Object.keys(rep.spawns[spawns[0]].nearest || {});
+  return spawns.flatMap((i) => labels.map((lb) => spawnLine(rep, i, lb))).filter(Boolean);
+}
+
+function spawnIndexAt(p) {
+  const r = state.result;
+  return r ? r.spawns.findIndex(([x, y]) => x === p[0] && y === p[1]) : -1;
+}
+
+function drawHighlight(shapes) {
+  const svg = $("highlight");
+  const r = state.result;
+  if (!r || !shapes.length) { svg.innerHTML = ""; return; }
+  const box = { width: svg.clientWidth, height: svg.clientHeight };  // unzoomed size
+  svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+  const sx = box.width / r.world_size, sy = box.height / r.world_size;
+  const colorOf = (s) => {
+    const k = s.k !== undefined ? s.k : spawnIndexAt(s.a || s.at);
+    return k >= 0 ? SPAWN_COLORS[k][2] : "#ffd166";
+  };
+  let out = "";
+  for (const s of shapes) {
+    const c = colorOf(s);
+    if (s.type === "line") {
+      const [x1, y1, x2, y2] = [s.a[0] * sx, s.a[1] * sy, s.b[0] * sx, s.b[1] * sy];
+      out += `<line class="halo" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`
+        + `<line class="ink" stroke="${c}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`
+        + `<circle class="halo" cx="${x2}" cy="${y2}" r="6"/><circle class="ink" stroke="#fff" fill="${c}" cx="${x2}" cy="${y2}" r="5"/>`;
+      if (s.label) {
+        const right = x2 < box.width - 120;
+        out += `<text x="${x2 + (right ? 10 : -10)}" y="${y2 + 4}" text-anchor="${right ? "start" : "end"}">${escapeHtml(s.label)}</text>`;
+      }
+    } else if (s.type === "circle") {
+      const [cx, cy, rr] = [s.at[0] * sx, s.at[1] * sy, Math.max(6, s.r * sx)];
+      out += `<circle class="halo" cx="${cx}" cy="${cy}" r="${rr}"/><circle class="ink ring" stroke="${c}" cx="${cx}" cy="${cy}" r="${rr}"/>`;
+      if (s.label) out += `<text x="${cx}" y="${cy - rr - 6}" text-anchor="middle">${escapeHtml(s.label)}</text>`;
+    }
+  }
+  svg.innerHTML = out;
+}
+
+function clearHighlight() {
+  $("highlight").innerHTML = "";
+  document.querySelectorAll(".check.lit, .dist .lit").forEach((e) => e.classList.remove("lit"));
+}
+
+function onReportHover(ev) {
+  const el = ev.target.closest(".check[data-i], .dist td[data-l], .dist th[data-s]");
+  document.querySelectorAll(".check.lit, .dist .lit").forEach((e) => { if (e !== el) e.classList.remove("lit"); });
+  if (!el) { $("highlight").innerHTML = ""; return; }
+  el.classList.add("lit");
+  drawHighlight(shapesFor(el));
+}
+
+function renderOres(ores) {
+  const box = $("ore-legend");
+  if (!ores) {
+    box.innerHTML = `<div style="color:var(--muted)">Ores will be placed randomly by the server on first start.</div>`;
+    return;
+  }
+  const total = Object.values(ores).reduce((a, b) => a + b, 0) || 1;
+  const colors = Object.fromEntries(state.meta.ores.map((o) => [o.label, o.color]));
+  box.innerHTML = Object.entries(ores).map(([label, n]) =>
+    `<div><i style="background:${colors[label]}"></i>${label}<span class="pct">${(n / total * 100).toFixed(1)}%</span>`
+    + `<span class="pct" style="margin-left:6px">${n >= 1000 ? (n / 1000).toFixed(1) + "k" : n}</span></div>`).join("")
+    || `<div style="color:var(--muted)">No ores (all weights are 0)</div>`;
+}
+
+function onHover(ev) {
+  const r = state.result;
+  const tip = $("hover");
+  if (!r || !state.types) return;
+  const rect = $("map").getBoundingClientRect();
+  const fx = (ev.clientX - rect.left) / rect.width, fy = (ev.clientY - rect.top) / rect.height;
+  if (fx < 0 || fy < 0 || fx >= 1 || fy >= 1) { tip.style.display = "none"; return; }
+  const px = Math.floor(fx * r.size), py = Math.floor(fy * r.size);
+  const i = py * r.size + px;
+  const h = state.heights[i], t = state.types[i];
+  const name = h < 0 && (t === 5 || t === 1) ? `Seabed (${state.meta.type_names[t]})` : (state.meta.type_names[t] || `Type ${t}`);
+  tip.innerHTML = `<b>${Math.floor(fx * r.world_size)}, ${Math.floor(fy * r.world_size)}</b> · ${(h / 10).toFixed(1)} m · ${name}`;
+  const vr = $("viewer").getBoundingClientRect();
+  let left = ev.clientX - vr.left, top = ev.clientY - vr.top;
+  tip.style.display = "block";
+  if (left > vr.width - tip.offsetWidth - 30) left -= tip.offsetWidth + 24;
+  if (top > vr.height - tip.offsetHeight - 30) top -= tip.offsetHeight + 24;
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+function checkName() {
+  const name = $("world-name").value.trim();
+  const w = state.meta.worlds.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  const box = $("exists-warn");
+  if (w && w.has_map) {
+    box.textContent = `“${w.name}” already has a map. Tick “Replace existing map” to overwrite it; the old map files are moved to a backup folder first.`
+      + (w.has_db ? " Its databases (players, villages, items) are kept and may not fit the new terrain." : "");
+    box.classList.add("on");
+  } else box.classList.remove("on");
+}
+
+async function createWorld() {
+  const name = $("world-name").value.trim();
+  if (!name) { $("world-name").focus(); return; }
+  const body = Object.assign(requestBody(), {
+    name, template: $("template").value, force: $("force").checked, set_name: $("set-name").checked,
+    template_items: $("template-items").checked,
+  });
+  $("done-msg").classList.remove("on");
+  try {
+    await post("/api/save", body);
+    $("create").disabled = true;
+    $("log").classList.add("on");
+    $("log").textContent = "";
+    pollJob();
+  } catch (e) {
+    $("log").classList.add("on");
+    $("log").innerHTML = `<span class="err">${e.message}</span>`;
+  }
+}
+
+async function pollJob() {
+  clearTimeout(state.polling);
+  const j = await fetch("/api/job").then((r) => r.json());
+  const log = $("log");
+  log.innerHTML = j.lines.map((l) => l.includes("ERROR") ? `<span class="err">${escapeHtml(l)}</span>` : escapeHtml(l)).join("\n");
+  log.scrollTop = log.scrollHeight;
+  if (j.state === "running") {
+    state.polling = setTimeout(pollJob, 700);
+    return;
+  }
+  $("create").disabled = false;
+  if (j.state === "done") {
+    const msg = $("done-msg");
+    msg.innerHTML = `World <b>${escapeHtml(j.world)}</b> created in ${j.elapsed}s. Select it in the Wurm server launcher to start it. `
+      + `<a href="/world-preview/${encodeURIComponent(j.world)}" target="_blank">Full map preview</a> · `
+      + `<a href="/viewer?src=world:${encodeURIComponent(j.world)}" target="_blank">Explore in 3D</a>`;
+    msg.classList.add("on");
+    state.meta = await fetch("/api/meta").then((r) => r.json());
+    fillTemplates();
+    fillHeightmapWorlds();
+    fillPlayerMap();
+    $("pm-world").value = j.world;
+    updatePlayerMapLinks();
+    checkName();
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// ---- Base terrain: generated or an imported heightmap ----
+
+function setBase(mode) {
+  state.base = mode;
+  $("base-mode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  $("base-box").classList.toggle("on", mode === "imported");
+  showHeightmapInfo();
+  schedulePreview(0);
+}
+
+function showHeightmapInfo(info) {
+  const box = $("hm-info");
+  if (info) box.dataset.text = info;
+  $("hm-sea-wrap").hidden = !state.heightmap || state.heightmapExact;
+  $("hm-sea-out").textContent = `${Math.round($("hm-sea").value * 100)}% grey`;
+  if (!state.heightmap) box.textContent = "No heightmap chosen. Pick a world or upload a file.";
+  else box.textContent = (box.dataset.text || state.heightmap)
+    + ". Rivers, surface, ores and spawns are still generated; the Shape sliders don't apply.";
+}
+
+function fillHeightmapWorlds() {
+  const sel = $("hm-world");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">Choose…</option>` + state.meta.worlds.filter((w) => w.has_map)
+    .map((w) => `<option value="world:${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join("")
+    + (state.heightmap && !state.heightmap.startsWith("world:") ? `<option value="${escapeHtml(state.heightmap)}">Uploaded file</option>` : "");
+  sel.value = [...sel.options].some((o) => o.value === (state.heightmap || cur)) ? (state.heightmap || cur) : "";
+}
+
+async function uploadHeightmap(file) {
+  if (!file) return;
+  $("hm-info").textContent = `Uploading ${file.name}…`;
+  try {
+    const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
+      method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Mapgen": "1" }, body: file,
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+    state.heightmap = r.name;
+    state.heightmapExact = r.exact;
+    fillHeightmapWorlds();
+    showHeightmapInfo(`${file.name}: ${r.width}×${r.height}${r.exact ? ", exact heights" : ""}`);
+    schedulePreview(0);
+  } catch (e) {
+    $("hm-info").textContent = "Upload failed: " + e.message;
+  }
+}
+
+// ---- Painting: sketch and brush edits ----
+
+const SKETCH_COLORS = { 1: [47, 111, 214], 2: [90, 160, 70], 3: [154, 141, 122], 4: [217, 201, 90] };
+const EDIT_COLORS = {
+  raise: "#e0603a", lower: "#3a8ee0", flatten: "#c9b458", forest: "#2f7a32", clear: "#b6d17a", grass: "#7fbf4f",
+  clay: "#b0785a", sand: "#e6d39a", tar: "#222", gravel: "#9a9a92",
+};
+const paint = { down: false, stroke: null, last: null, cursor: null, brush: 2 };
+
+function setPaintMode(mode) {
+  state.paint = mode;
+  $("paint-mode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  $("sketch-tools").classList.toggle("on", mode === "sketch");
+  $("edit-tools").classList.toggle("on", mode === "edit");
+  $("brush-size-wrap").classList.toggle("on", mode !== "off");
+  $("paint").classList.toggle("off", mode === "off");
+  if (mode !== "off") closeGallery();
+  drawPaint();
+}
+
+function brushTiles() { return Number($("brush-size").value); }
+function worldSize() { return Number($("world-size").value); }
+
+function eventPos(ev) {
+  const r = $("paint").getBoundingClientRect();
+  return [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height];
+}
+
+function drawPaint() {
+  const cv = $("paint");
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const s = cv.width / SKETCH;
+  if (state.paint === "sketch") {
+    const img = ctx.createImageData(SKETCH, SKETCH);
+    for (let i = 0; i < state.sketch.length; i++) {
+      const c = SKETCH_COLORS[state.sketch[i]];
+      if (!c) continue;
+      img.data.set([c[0], c[1], c[2], 115], i * 4);
+    }
+    const tmp = document.createElement("canvas");
+    tmp.width = tmp.height = SKETCH;
+    tmp.getContext("2d").putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tmp, 0, 0, cv.width, cv.height);
+  }
+  if (state.paint === "edit") {
+    const k = cv.width / worldSize();
+    ctx.globalAlpha = 0.22;
+    for (const e of state.strokes.flat()) {
+      if (e.op === "spawn") continue;
+      ctx.fillStyle = EDIT_COLORS[e.op] || "#fff";
+      ctx.beginPath();
+      ctx.arc(e.x * k, e.y * k, Math.max(1.5, e.r * k), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (paint.cursor && state.paint !== "off") {
+    const [fx, fy] = paint.cursor;
+    const spawnTool = state.paint === "edit" && $("edit-brush").value.startsWith("spawn");
+    const r = spawnTool ? 8 : (brushTiles() / 2) / worldSize() * cv.width;
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(fx * cv.width, fy * cv.height, Math.max(2, r), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function paintSketchAt(fx, fy) {
+  const cx = fx * SKETCH, cy = fy * SKETCH;
+  const r = Math.max(0.7, brushTiles() / 2 / worldSize() * SKETCH);
+  for (let y = Math.floor(cy - r); y <= cy + r; y++) {
+    for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+      if (x < 0 || y < 0 || x >= SKETCH || y >= SKETCH) continue;
+      if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) state.sketch[y * SKETCH + x] = paint.brush;
+    }
+  }
+}
+
+function heightAt(fx, fy) {
+  const r = state.result;
+  if (!r || !state.heights) return 0;
+  const px = Math.min(r.size - 1, Math.max(0, Math.floor(fx * r.size)));
+  const py = Math.min(r.size - 1, Math.max(0, Math.floor(fy * r.size)));
+  return state.heights[py * r.size + px];
+}
+
+function addDab(fx, fy, force) {
+  const ws = worldSize();
+  const x = Math.round(fx * ws * 10) / 10, y = Math.round(fy * ws * 10) / 10;
+  const r = brushTiles() / 2;
+  if (!force && paint.last && Math.hypot(x - paint.last[0], y - paint.last[1]) < Math.max(1, r * 0.45)) return;
+  paint.last = [x, y];
+  const op = $("edit-brush").value;
+  const e = { op, x, y, r, s: Number($("edit-strength").value) };
+  if (op === "flatten") e.z = paint.flatZ;
+  paint.stroke.push(e);
+}
+
+function onPaintDown(ev) {
+  if (state.paint === "off" || ev.button !== 0 || view.space) return;
+  ev.preventDefault();
+  $("paint").setPointerCapture(ev.pointerId);
+  const [fx, fy] = eventPos(ev);
+  paint.down = true;
+  paint.last = null;
+  if (state.paint === "sketch") {
+    paintSketchAt(fx, fy);
+  } else {
+    const tool = $("edit-brush").value;
+    if (tool.startsWith("spawn")) {
+      const k = Number(tool.split(":")[1]);
+      state.strokes = state.strokes.filter((s) => !(s.length === 1 && s[0].op === "spawn" && s[0].k === k));
+      const ws = worldSize();
+      state.strokes.push([{ op: "spawn", k, x: Math.round(fx * ws), y: Math.round(fy * ws) }]);
+      paint.down = false;
+      afterPaint();
+      return;
+    }
+    paint.flatZ = heightAt(fx, fy);
+    paint.stroke = [];
+    addDab(fx, fy, true);
+  }
+  drawPaint();
+}
+
+function onPaintMove(ev) {
+  paint.cursor = eventPos(ev);
+  if (paint.down) {
+    const [fx, fy] = paint.cursor;
+    if (state.paint === "sketch") paintSketchAt(fx, fy);
+    else if (paint.stroke) addDab(fx, fy, false);
+    if (state.paint === "edit" && paint.stroke) {
+      // Show the stroke as it's drawn.
+      state.strokes.push(paint.stroke);
+      drawPaint();
+      state.strokes.pop();
+      return;
+    }
+  }
+  drawPaint();
+  onHover(ev);
+}
+
+function onPaintUp() {
+  if (!paint.down) return;
+  paint.down = false;
+  if (state.paint === "edit" && paint.stroke && paint.stroke.length) state.strokes.push(paint.stroke);
+  paint.stroke = null;
+  afterPaint();
+}
+
+function afterPaint() {
+  updateEditCount();
+  drawPaint();
+  if ($("auto").checked) schedulePreview(0);
+}
+
+function updateEditCount() {
+  const n = state.strokes.length;
+  $("edit-count").textContent = n ? `${n} stroke${n === 1 ? "" : "s"}` : "";
+}
+
+// ---- Dragging spawn markers ----
+
+const drag = { k: -1, el: null, start: null, moved: false };
+
+function mapFraction(ev) {
+  const r = $("map").getBoundingClientRect();
+  return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+}
+
+function onSpawnDown(ev) {
+  const el = ev.target.closest(".spawn");
+  if (!el || ev.button !== 0) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  drag.k = Number(el.dataset.k);
+  drag.el = el;
+  drag.start = [ev.clientX, ev.clientY];
+  drag.moved = false;
+  el.setPointerCapture(ev.pointerId);
+  el.classList.add("dragging");
+  clearHighlight();
+}
+
+function onSpawnMove(ev) {
+  if (drag.k < 0) return;
+  if (Math.hypot(ev.clientX - drag.start[0], ev.clientY - drag.start[1]) > 3) drag.moved = true;
+  const [fx, fy] = mapFraction(ev);
+  drag.el.style.left = fx * 100 + "%";
+  drag.el.style.top = fy * 100 + "%";
+  onHover(ev);
+}
+
+function onSpawnUp(ev) {
+  if (drag.k < 0) return;
+  const k = drag.k;
+  drag.el.classList.remove("dragging");
+  drag.k = -1;
+  $("hover").style.display = "none";
+  if (!drag.moved) return;
+  const [fx, fy] = mapFraction(ev);
+  const ws = worldSize();
+  // One move per spawn: replace an earlier move so Undo steps back cleanly.
+  state.strokes = state.strokes.filter((s) => !(s.length === 1 && s[0].op === "spawn" && s[0].k === k));
+  state.strokes.push([{ op: "spawn", k, x: Math.round(fx * ws), y: Math.round(fy * ws) }]);
+  setStatus(`Moved the ${SPAWN_COLORS[k][1]} spawn; regenerating…`);
+  afterPaint();
+  if (!$("auto").checked) preview();
+}
+
+// ---- Fit the map to the window ----
+
+// The largest square that fits beside the cards and below the toolbars, recomputed whenever
+// the window, the map's column or the toolbars change size.
+function fitViewer() {
+  const viewer = $("viewer"), main = document.querySelector(".main");
+  const wrap = viewer.parentElement;  // the grid: map column + cards column (stacked when narrow)
+  const css = getComputedStyle(wrap);
+  const stacked = css.gridTemplateColumns.split(" ").length < 2;
+  // Leave the cards their minimum width (260px) beside the map unless they're stacked below it.
+  const width = wrap.clientWidth - (stacked ? 0 : 260 + (parseFloat(css.columnGap) || 0));
+  let size = width;
+  if (!(stacked && innerWidth <= 780)) {
+    // Height left in the scrolling area below the toolbars (measured as if scrolled to the top).
+    const top = viewer.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+    const pad = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+    size = Math.min(width, main.clientHeight - top - Math.min(pad, 18));
+  }
+  size = Math.max(280, Math.floor(size));
+  viewer.style.maxWidth = "none";
+  viewer.style.width = viewer.style.height = `${size}px`;
+  applyZoom();
+  if ($("highlight").childNodes.length) clearHighlight();
+}
+
+function setupFit() {
+  let pending = false;
+  const schedule = () => {
+    if (pending) return;
+    pending = true;
+    setTimeout(() => { pending = false; fitViewer(); }, 30);
+  };
+  addEventListener("resize", schedule);
+  const ro = new ResizeObserver(schedule);
+  for (const el of [document.querySelector(".main"), document.querySelector(".toolbar"),
+                    document.querySelector(".paintbar"), $("viewer").parentElement]) ro.observe(el);
+  fitViewer();
+}
+
+// ---- Zoom and pan ----
+
+const view = { z: 1, x: 0, y: 0, pan: null, space: false, justPanned: false };
+const MAX_ZOOM = 16;
+
+function applyZoom() {
+  const vr = $("viewer").getBoundingClientRect();
+  // Keep the map covering the viewer: no empty margins when zoomed in.
+  view.z = Math.min(MAX_ZOOM, Math.max(1, view.z));
+  view.x = Math.min(0, Math.max(vr.width * (1 - view.z), view.x));
+  view.y = Math.min(0, Math.max(vr.height * (1 - view.z), view.y));
+  const layer = $("zoom");
+  layer.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+  $("viewer").style.setProperty("--z", view.z);
+  $("zoom-level").textContent = `${Math.round(view.z * 100)}%`;
+}
+
+function zoomAt(factor, cx, cy) {
+  const vr = $("viewer").getBoundingClientRect();
+  if (cx === undefined) { cx = vr.width / 2; cy = vr.height / 2; }
+  const z = Math.min(MAX_ZOOM, Math.max(1, view.z * factor));
+  // Keep the point under the cursor in place.
+  view.x = cx - (cx - view.x) * (z / view.z);
+  view.y = cy - (cy - view.y) * (z / view.z);
+  view.z = z;
+  applyZoom();
+}
+
+function setupZoom() {
+  const viewer = $("viewer");
+  viewer.addEventListener("wheel", (ev) => {
+    if (!state.result || $("gallery").classList.contains("on")) return;
+    ev.preventDefault();
+    const vr = viewer.getBoundingClientRect();
+    zoomAt(Math.exp(-ev.deltaY * 0.0015), ev.clientX - vr.left, ev.clientY - vr.top);
+  }, { passive: false });
+  $("zoom").addEventListener("mousedown", (ev) => { if (ev.button === 1) ev.preventDefault(); });  // no autoscroll
+  // Pan: drag the map (when not painting), middle-drag, or hold Space and drag in paint modes.
+  $("zoom").addEventListener("pointerdown", (ev) => {
+    view.justPanned = false;
+    // Shift+click opens the 3D viewer, so it never starts a pan.
+    if (ev.target.closest(".spawn") || view.z <= 1 || ev.shiftKey) return;
+    const ok = ev.button === 1 || (ev.button === 0 && (state.paint === "off" || view.space));
+    if (!ok) return;
+    ev.preventDefault();
+    view.pan = { id: ev.pointerId, sx: ev.clientX, sy: ev.clientY, x: view.x, y: view.y, moved: false };
+    $("zoom").setPointerCapture(ev.pointerId);
+  });
+  $("zoom").addEventListener("pointermove", (ev) => {
+    const p = view.pan;
+    if (!p || p.id !== ev.pointerId) return;
+    const dx = ev.clientX - p.sx, dy = ev.clientY - p.sy;
+    if (!p.moved && Math.hypot(dx, dy) < 3) return;
+    p.moved = true;
+    viewer.classList.add("panning");
+    view.x = p.x + dx; view.y = p.y + dy;
+    applyZoom();
+  });
+  const endPan = (ev) => {
+    if (!view.pan || view.pan.id !== ev.pointerId) return;
+    // A real drag shouldn't also count as a click (e.g. Shift+click opens the 3D viewer).
+    view.justPanned = view.pan.moved;
+    view.pan = null;
+    viewer.classList.remove("panning");
+  };
+  $("zoom").addEventListener("pointerup", endPan);
+  $("zoom").addEventListener("pointercancel", endPan);
+  $("map").addEventListener("dblclick", (ev) => {
+    if (state.paint !== "off") return;
+    if (view.z > 1) { view.z = 1; applyZoom(); return; }
+    const vr = viewer.getBoundingClientRect();
+    zoomAt(4, ev.clientX - vr.left, ev.clientY - vr.top);
+  });
+  addEventListener("keydown", (e) => { if (e.code === "Space" && document.activeElement.tagName !== "INPUT") view.space = true; });
+  addEventListener("keyup", (e) => { if (e.code === "Space") view.space = false; });
+  $("zoom-in").onclick = () => zoomAt(1.5);
+  $("zoom-out").onclick = () => zoomAt(1 / 1.5);
+  $("zoom-fit").onclick = () => { view.z = 1; applyZoom(); };
+  addEventListener("resize", applyZoom);
+}
+
+// ---- 3D viewer ----
+
+// In the desktop app, pages open as app windows; in a browser, as new tabs.
+function openWindow(path, title) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.open_window) {
+    window.pywebview.api.open_window(path, title);
+  } else {
+    window.open(path, "_blank");
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest('a[target="_blank"]');
+  if (!a || a.hasAttribute("download") || !window.pywebview) return;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin) return;
+  ev.preventDefault();
+  openWindow(url.pathname + url.search, url.pathname.startsWith("/viewer") ? "Wurm Map Viewer" : "Wurm Map Generator");
+});
+
+function openViewer(x, y) {
+  if (!state.result) { setStatus("Generate a preview first", true); return; }
+  const q = new URLSearchParams({ src: "preview" });
+  if (x !== undefined) { q.set("x", x); q.set("y", y); }
+  openWindow(`/viewer?${q}`, "Wurm Map Viewer");
+}
+
+// ---- Player map and heightmap downloads ----
+
+function fillPlayerMap() {
+  const sel = $("pm-world");
+  const cur = sel.value;
+  const worlds = state.meta.worlds.filter((w) => w.has_map);
+  sel.innerHTML = worlds.map((w) => `<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join("")
+    || `<option value="">No worlds with maps yet</option>`;
+  if (worlds.some((w) => w.name === cur)) sel.value = cur;
+  updatePlayerMapLinks();
+}
+
+function updatePlayerMapLinks() {
+  const w = $("pm-world").value;
+  const ok = !!w;
+  for (const id of ["pm-download", "hm-download", "pm-explore"]) $(id).classList.toggle("disabled", !ok);
+  if (!ok) { $("pm-download").removeAttribute("href"); $("hm-download").removeAttribute("href"); return; }
+  const title = $("pm-title").value.trim() || w;
+  const q = new URLSearchParams({ world: w, px: $("pm-size").value, grid: $("pm-grid").value,
+    spawns: $("pm-spawns").checked ? "1" : "0", title });
+  $("pm-download").href = `/api/playermap?${q}`;
+  $("pm-download").download = `${w}-player-map.png`;
+  $("hm-download").href = `/world-heightmap/${encodeURIComponent(w)}`;
+  $("pm-explore").href = `/viewer?src=world:${encodeURIComponent(w)}`;
+  $("hm-download").download = `${w}-heightmap.png`;
+  $("pm-note").textContent = "Rendering takes a few seconds for large worlds.";
+}
+
+// ---- Presets ----
+
+function fillPresets(select) {
+  const sel = $("preset");
+  const list = state.meta.presets || [];
+  sel.innerHTML = list.length ? list.map((p) => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join("")
+    : `<option value="">No saved presets</option>`;
+  if (select && list.some((p) => p.name === select)) sel.value = select;
+  $("preset-load").disabled = $("preset-delete").disabled = !list.length;
+  showPresetMeta();
+}
+
+function showPresetMeta() {
+  const p = (state.meta.presets || []).find((x) => x.name === $("preset").value);
+  if (!p) { $("preset-meta").textContent = ""; return; }
+  const style = state.meta.styles[p.style]?.label || p.style;
+  const v = p.values || {};
+  const n = Object.keys(v).filter((key) => !["heightmap", "heightmap_sea", "sketch", "edits"].includes(key)).length;
+  const extras = [v.heightmap && "heightmap", v.sketch && "sketch", v.edits && v.edits.length && "edits"].filter(Boolean);
+  $("preset-meta").textContent = `${style}, ${n ? `${n} setting${n === 1 ? "" : "s"} changed` : "style defaults"}`
+    + (extras.length ? ` + ${extras.join(", ")}` : "")
+    + (p.seed !== undefined ? `, seed ${p.seed}` : "") + (p.world_size ? `, ${p.world_size}²` : "");
+}
+
+function loadPreset() {
+  const p = (state.meta.presets || []).find((x) => x.name === $("preset").value);
+  if (!p) return;
+  state.style = p.style;
+  const { heightmap, heightmap_sea, sketch, edits, ...sliders } = p.values || {};
+  state.values = Object.assign(styleValues(p.style), sliders);
+  state.heightmap = heightmap || null;
+  state.heightmapExact = !!heightmap && (heightmap.startsWith("world:") || heightmap.endsWith(".map"));
+  if (heightmap_sea !== undefined) $("hm-sea").value = heightmap_sea;
+  state.sketch = sketch ? Uint8Array.from(atob(sketch), (c) => c.charCodeAt(0)) : new Uint8Array(SKETCH * SKETCH);
+  if (state.sketch.length !== SKETCH * SKETCH) state.sketch = new Uint8Array(SKETCH * SKETCH);
+  state.strokes = edits && edits.length ? [edits] : [];
+  fillHeightmapWorlds();
+  state.base = heightmap ? "imported" : "generated";
+  $("base-mode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === state.base)));
+  $("base-box").classList.toggle("on", !!heightmap);
+  showHeightmapInfo(heightmap ? (heightmap.startsWith("world:") ? `Map of ${heightmap.slice(6)}` : "Uploaded heightmap") : undefined);
+  updateEditCount();
+  drawPaint();
+  if (p.seed !== undefined) $("seed").value = p.seed;
+  if (p.world_size) $("world-size").value = String(p.world_size);
+  $("preset-name").value = p.name;
+  syncControls();
+  document.querySelector(`.style-card[data-style="${state.style}"]`).scrollIntoView({ block: "nearest" });
+  schedulePreview(0);
+  setStatus(`Loaded preset “${p.name}”`);
+}
+
+async function presetAction(action, name) {
+  try {
+    const body = Object.assign(requestBody(), { action, name, include_seed: $("preset-seed").checked });
+    if (!$("preset-seed").checked) delete body.world_size;
+    const r = await post("/api/presets", body);
+    state.meta.presets = r.presets;
+    fillPresets(action === "save" ? name : undefined);
+    setStatus(action === "save" ? `Saved preset “${name}”` : `Deleted preset “${name}”`);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+// ---- Seed gallery ----
+
+const gallery = { gen: 0, results: [], pins: [] };
+
+function issuesHtml(r) {
+  return (r.problems ? `<span class="bad">${r.problems} problem${r.problems > 1 ? "s" : ""}</span>` : "")
+    + (r.warnings ? ` <span class="warn">${r.warnings} warning${r.warnings > 1 ? "s" : ""}</span>` : "")
+    || "no issues";
+}
+
+async function openGallery() {
+  const gen = ++gallery.gen;
+  const base = requestBody();
+  const seeds = Array.from({ length: 9 }, () => Math.floor(Math.random() * 1e6));
+  gallery.results = [];
+  gallery.pins = [];
+  showCompare(false);
+  $("gallery").classList.add("on");
+  const grid = $("gallery-grid");
+  grid.innerHTML = seeds.map((s) => `<div class="thumb" role="button" tabindex="0" data-seed="${s}" aria-label="Seed ${s}"><span class="wait">seed ${s}…</span></div>`).join("");
+  grid.querySelectorAll(".thumb").forEach((b, i) => {
+    b.onclick = (ev) => {
+      if (ev.target.closest(".pin")) { togglePin(i); return; }
+      pickSeed(Number(b.dataset.seed));
+    };
+    b.onkeydown = (ev) => { if (ev.key === "Enter") pickSeed(Number(b.dataset.seed)); };
+  });
+  for (let i = 0; i < seeds.length; i++) {
+    if (gen !== gallery.gen) return;
+    $("gallery-status").textContent = `${i}/${seeds.length}`;
+    try {
+      const r = await post("/api/thumb", Object.assign({}, base, { seed: seeds[i] }));
+      if (gen !== gallery.gen) return;
+      gallery.results[i] = r;
+      grid.children[i].innerHTML = `<button class="pin" aria-pressed="false" title="Pick two to compare side by side">Compare</button>`
+        + `<img src="data:image/png;base64,${r.image}" alt="">`
+        + `<span class="cap"><b>${r.seed}</b> · ${Math.round(r.land * 100)}% land · ${r.rivers} rivers<br>${issuesHtml(r)}</span>`;
+    } catch (e) {
+      grid.children[i].innerHTML = `<span class="wait">${escapeHtml(e.message)}</span>`;
+    }
+  }
+  if (gen === gallery.gen) $("gallery-status").textContent = "Click a map to use its seed, or pick two to compare";
+}
+
+function togglePin(i) {
+  if (!gallery.results[i]) return;
+  const at = gallery.pins.indexOf(i);
+  if (at >= 0) gallery.pins.splice(at, 1); else gallery.pins.push(i);
+  refreshPins();
+  if (gallery.pins.length === 2) showCompare(true);
+}
+
+function refreshPins() {
+  $("gallery-grid").querySelectorAll(".thumb").forEach((t, j) => {
+    const on = gallery.pins.includes(j);
+    t.classList.toggle("pinned", on);
+    const pin = t.querySelector(".pin");
+    if (pin) pin.setAttribute("aria-pressed", String(on));
+  });
+}
+
+function showCompare(on) {
+  $("gallery-grid").hidden = on;
+  $("compare").classList.toggle("on", on);
+  $("compare-back").hidden = !on;
+  if (!on) return;
+  $("compare").innerHTML = gallery.pins.map((i) => {
+    const r = gallery.results[i];
+    return `<figure><img src="data:image/png;base64,${r.image}" alt="Seed ${r.seed}">`
+      + `<figcaption><b>${r.seed}</b><span>${Math.round(r.land * 100)}% land · peak ${(r.peak / 10).toFixed(0)} m · `
+      + `${r.rivers} rivers · ${r.lakes} lakes</span><span>${issuesHtml(r)}</span>`
+      + `<button class="btn small" data-seed="${r.seed}">Use this seed</button></figcaption></figure>`;
+  }).join("");
+  $("compare").querySelectorAll("button[data-seed]").forEach((b) => b.onclick = () => pickSeed(Number(b.dataset.seed)));
+  $("gallery-status").textContent = "Comparing two seeds";
+}
+
+function closeGallery() {
+  gallery.gen++;
+  $("gallery").classList.remove("on");
+}
+
+function pickSeed(seed) {
+  closeGallery();
+  $("seed").value = seed;
+  if ($("auto").checked) schedulePreview(0); else preview();
+}
+
+function fillTemplates() {
+  const sel = $("template");
+  const current = sel.value || "Creative";
+  sel.innerHTML = state.meta.worlds.filter((w) => w.has_db).map((w) => `<option value="${w.name}">${w.name}</option>`).join("")
+    + `<option value="">None (map files only)</option>`;
+  sel.value = [...sel.options].some((o) => o.value === current) ? current : sel.options[0].value;
+}
+
+async function init() {
+  state.meta = await fetch("/api/meta").then((r) => r.json());
+  $("dist-path").textContent = state.meta.dist;
+  buildStyles();
+  buildParams();
+  fillTemplates();
+  fillPresets();
+  $("preset").onchange = showPresetMeta;
+  $("preset-load").onclick = loadPreset;
+  $("preset-delete").onclick = () => {
+    const name = $("preset").value;
+    if (name && confirm(`Delete preset “${name}”?`)) presetAction("delete", name);
+  };
+  $("preset-save").onclick = () => {
+    const name = $("preset-name").value.trim();
+    if (!name) { $("preset-name").focus(); return; }
+    if ((state.meta.presets || []).some((p) => p.name.toLowerCase() === name.toLowerCase())
+        && !confirm(`Replace preset “${name}”?`)) return;
+    presetAction("save", name);
+  };
+  // Base terrain.
+  fillHeightmapWorlds();
+  $("base-mode").querySelectorAll("button").forEach((b) => b.onclick = () => setBase(b.dataset.mode));
+  $("hm-world").onchange = () => {
+    const v = $("hm-world").value;
+    state.heightmap = v || null;
+    state.heightmapExact = v.startsWith("world:");
+    showHeightmapInfo(v.startsWith("world:") ? `Map of ${v.slice(6)}` : v ? "Uploaded heightmap" : "");
+    schedulePreview(0);
+  };
+  $("hm-file").onchange = () => uploadHeightmap($("hm-file").files[0]);
+  $("hm-sea").oninput = () => { showHeightmapInfo(); schedulePreview(); };
+  showHeightmapInfo();
+
+  // Painting.
+  $("paint-mode").querySelectorAll("button").forEach((b) => b.onclick = () => setPaintMode(b.dataset.mode));
+  $("sketch-brush").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    paint.brush = Number(b.dataset.b);
+    $("sketch-brush").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  });
+  $("sketch-clear").onclick = () => { state.sketch.fill(0); afterPaint(); };
+  $("edit-undo").onclick = () => { state.strokes.pop(); afterPaint(); };
+  $("edit-clear").onclick = () => { if (!state.strokes.length || confirm("Remove all edits?")) { state.strokes = []; afterPaint(); } };
+  $("brush-size").oninput = () => { $("brush-size-out").textContent = `${brushTiles()} tiles`; drawPaint(); };
+  $("brush-size-out").textContent = `${brushTiles()} tiles`;
+  const cv = $("paint");
+  cv.addEventListener("pointerdown", onPaintDown);
+  cv.addEventListener("pointermove", onPaintMove);
+  cv.addEventListener("pointerup", onPaintUp);
+  cv.addEventListener("pointercancel", onPaintUp);
+  cv.addEventListener("pointerleave", () => { paint.cursor = null; drawPaint(); $("hover").style.display = "none"; });
+  $("world-size").addEventListener("change", drawPaint);
+
+  // Player map.
+  fillPlayerMap();
+  for (const id of ["pm-world", "pm-size", "pm-grid", "pm-spawns"]) $(id).onchange = updatePlayerMapLinks;
+  $("pm-title").oninput = updatePlayerMapLinks;
+
+  $("compare-back").onclick = () => { gallery.pins = []; refreshPins(); showCompare(false);
+    $("gallery-status").textContent = "Click a map to use its seed, or pick two to compare"; };
+  $("spawns").addEventListener("pointerdown", onSpawnDown);
+  $("spawns").addEventListener("pointermove", onSpawnMove);
+  $("spawns").addEventListener("pointerup", onSpawnUp);
+  $("spawns").addEventListener("pointercancel", onSpawnUp);
+  for (const id of ["checks", "dist"]) {
+    $(id).addEventListener("mouseover", onReportHover);
+    $(id).addEventListener("mouseleave", clearHighlight);
+    $(id).addEventListener("focusin", onReportHover);
+  }
+  $("gallery-open").onclick = openGallery;
+  $("gallery-more").onclick = openGallery;
+  $("gallery-close").onclick = closeGallery;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeGallery();
+    if ((e.ctrlKey || e.metaKey) && e.key === "z" && state.paint === "edit" && document.activeElement.tagName !== "INPUT") {
+      e.preventDefault();
+      state.strokes.pop();
+      afterPaint();
+    }
+  });
+  $("seed").value = Math.floor(Math.random() * 1e6);
+  $("seed").onchange = () => schedulePreview(0);
+  $("shuffle").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); schedulePreview(0); };
+  $("world-size").onchange = () => schedulePreview(0);
+  $("preview-size").onchange = () => schedulePreview(0);
+  $("reset").onclick = () => applyStyle(state.style);
+  $("surprise").onclick = () => {
+    const keys = Object.keys(state.meta.styles);
+    $("seed").value = Math.floor(Math.random() * 1e6);
+    applyStyle(keys[Math.floor(Math.random() * keys.length)]);
+    document.querySelector(`.style-card[data-style="${state.style}"]`).scrollIntoView({ block: "nearest" });
+  };
+  $("generate").onclick = preview;
+  setupZoom();
+  setupFit();
+  $("explore").onclick = () => openViewer();
+  // On the zoom layer, not the image: while zoomed, a press captures the pointer to the layer,
+  // so the click is delivered there.
+  $("zoom").addEventListener("click", (ev) => {
+    if (view.justPanned) { view.justPanned = false; return; }  // the end of a drag, not a click
+    if (!ev.shiftKey || !state.result || state.paint !== "off" || ev.target.closest(".spawn")) return;
+    const r = $("map").getBoundingClientRect();
+    openViewer(Math.floor((ev.clientX - r.left) / r.width * state.result.world_size),
+               Math.floor((ev.clientY - r.top) / r.height * state.result.world_size));
+  });
+  $("auto").onchange = () => { if ($("auto").checked) schedulePreview(0); };
+  $("show-spawns").onchange = showResult;
+  $("view").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    state.view = b.dataset.view;
+    $("view").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    showResult();
+  });
+  $("map").addEventListener("mousemove", onHover);
+  $("map").addEventListener("mouseleave", () => $("hover").style.display = "none");
+  $("world-name").oninput = checkName;
+  $("create").onclick = createWorld;
+  applyStyle("continent");
+  const j = await fetch("/api/job").then((r) => r.json());
+  if (j.state === "running") { $("create").disabled = true; $("log").classList.add("on"); pollJob(); }
+}
+
+init().catch((e) => setStatus("Could not reach the generator server: " + e.message, true));
+</script>
+</body>
+</html>

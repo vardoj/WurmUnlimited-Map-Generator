@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wurm Map Viewer</title>
+<style>
+:root { --panel: rgba(18, 22, 26, .82); --line: rgba(255, 255, 255, .14); --text: #eef1f4; --muted: #a9b3bd; --accent: #8fc46a; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f14; color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+canvas#view { display: block; width: 100vw; height: 100vh; }
+.panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(4px); }
+#hud { top: 12px; left: 12px; min-width: 230px; font-variant-numeric: tabular-nums; pointer-events: none; }
+#hud b { font-weight: 600; }
+#hud .row { display: flex; justify-content: space-between; gap: 14px; }
+#hud .k { color: var(--muted); }
+#side { top: 12px; right: 12px; width: 236px; max-height: calc(100vh - 24px); overflow: auto; }
+#side h1 { font-size: 14px; margin: 0 0 2px; }
+#side .src { color: var(--muted); font-size: 12px; margin-bottom: 8px; word-break: break-word; }
+#side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 0 5px; font-weight: 600; }
+#side .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button, select, input[type=text] {
+  font: inherit; color: var(--text); background: rgba(255, 255, 255, .08); border: 1px solid var(--line);
+  border-radius: 7px; padding: 4px 9px;
+}
+button { cursor: pointer; }
+button:hover { background: rgba(255, 255, 255, .16); }
+button.spawn { font-weight: 700; min-width: 34px; }
+input[type=text] { width: 100%; box-sizing: border-box; }
+select { width: 100%; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.lbl { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.lbl output { color: var(--text); font-variant-numeric: tabular-nums; }
+#minimap { width: 100%; aspect-ratio: 1; display: block; border-radius: 6px; cursor: crosshair; background: #18222c; }
+#help { left: 12px; bottom: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+#help kbd { color: var(--text); font: 600 11px ui-monospace, Consolas, monospace; background: rgba(255, 255, 255, .1); border-radius: 4px; padding: 1px 4px; }
+#start {
+  position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5, 8, 12, .45); cursor: pointer;
+  font-size: 15px; text-align: center;
+}
+#start div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 22px; }
+#start small { display: block; color: var(--muted); margin-top: 6px; }
+#start[hidden] { display: none; }
+#cross { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: rgba(255, 255, 255, .7); pointer-events: none; }
+#msg { position: fixed; left: 50%; top: 40%; transform: translateX(-50%); }
+#msg[hidden] { display: none; }
+.note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+.toggle { display: flex; gap: 6px; align-items: center; margin-top: 6px; cursor: pointer; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="cross"></div>
+
+<div class="panel" id="hud">
+  <div class="row"><span class="k">Tile</span><b id="h-tile">–</b></div>
+  <div class="row"><span class="k">Ground</span><span id="h-ground">–</span></div>
+  <div class="row"><span class="k">Type</span><span id="h-type">–</span></div>
+  <div class="row"><span class="k">Slope</span><span id="h-slope">–</span></div>
+  <div class="row"><span class="k">Mode</span><span id="h-mode">–</span></div>
+  <div class="row"><span class="k">Loading</span><span id="h-load">–</span></div>
+  <div class="row"><span class="k">FPS</span><span id="h-fps">–</span></div>
+</div>
+
+<div class="panel" id="side">
+  <h1>Wurm Map Viewer</h1>
+  <div class="src" id="src-label">Loading…</div>
+  <select id="source" aria-label="Map to view"></select>
+  <h2>Go to</h2>
+  <div class="btns" id="spawn-btns"></div>
+  <div style="display:flex; gap:6px; margin-top:6px">
+    <input type="text" id="goto" placeholder="x, y (tiles)" aria-label="Tile coordinates">
+    <button id="goto-btn">Go</button>
+  </div>
+  <canvas id="minimap" width="236" height="236" title="Click to teleport"></canvas>
+  <h2>View</h2>
+  <div class="lbl"><span>View distance</span><output id="o-view"></output></div>
+  <input type="range" id="r-view" min="400" max="6000" step="100" value="2000">
+  <div class="lbl"><span>Trees drawn to</span><output id="o-trees"></output></div>
+  <input type="range" id="r-trees" min="100" max="2500" step="50" value="1000">
+  <div class="lbl"><span>Full tree models to</span><output id="o-near"></output></div>
+  <input type="range" id="r-near" min="0" max="400" step="10" value="150">
+  <label class="toggle"><input type="checkbox" id="c-tex" checked> Game textures &amp; models</label>
+  <div class="note" id="art-note"></div>
+</div>
+
+<div class="panel" id="help">
+  <kbd>Click</kbd> look · <kbd>W A S D</kbd> move · <kbd>Shift</kbd> run / fast · <kbd>Space</kbd> jump / up · <kbd>C</kbd> down ·
+  <kbd>F</kbd> walk ⇄ fly · <kbd>Wheel</kbd> fly speed · <kbd>M</kbd> hide panels · <kbd>Esc</kbd> free mouse
+</div>
+
+<div id="start"><div>Click to explore<small>Mouse looks around · W A S D to move · F switches walking and flying</small></div></div>
+<div class="panel" id="msg" hidden></div>
+
+<script type="module">
+import * as THREE from "three";
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const SRC = params.get("src") || "preview";
+const FLAT = params.get("flat") === "1";
+const M = 4;             // metres per tile
+const EYE = 1.7;         // eye height in metres
+const SPAWNS = [["J", "Jenn-Kellon", "#2f6fd6"], ["M", "Mol-Rehan", "#c93b2f"], ["L", "Horde of the Summoned", "#7b4bbf"]];
+
+function fail(text) {
+  $("msg").textContent = text;
+  $("msg").hidden = false;
+  $("start").hidden = true;
+}
+
+const res = await fetch(`/api/view/meta?src=${encodeURIComponent(SRC)}`);
+const meta = await res.json();
+if (!res.ok) { fail(meta.error || "Could not load the map."); throw new Error(meta.error); }
+const USE_ART = meta.client && !FLAT;
+const K = meta.k;                    // world tiles per sample
+const SM = K * M;                    // metres per sample
+const N = meta.chunk;                // samples per chunk side
+const CHUNKS = meta.size / N;
+const WORLD_M = meta.world * M;
+
+// ---------------------------------------------------------------- renderer, sky, light
+const renderer = new THREE.WebGLRenderer({ canvas: $("view"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.2, 20000);
+camera.rotation.order = "YXZ";
+const FOG = new THREE.Color(0xb7cde0);
+const ZENITH = new THREE.Color(0x5a8fc8);
+scene.background = FOG;
+const SUN = new THREE.Vector3(0.45, 0.75, 0.35).normalize();
+scene.add(new THREE.HemisphereLight(0xdbe8f5, 0x5a5040, 1.1));
+const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.6);
+sunLight.position.copy(SUN);
+scene.add(sunLight);
+const fogUniforms = { uFog: { value: FOG }, uFogDensity: { value: 1 / 1500 } };
+
+const sky = new THREE.Mesh(new THREE.SphereGeometry(15000, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uFog: fogUniforms.uFog, uZenith: { value: ZENITH } },
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }`,
+  fragmentShader: `uniform vec3 uFog; uniform vec3 uZenith; varying vec3 vDir;
+    void main(){ float t = smoothstep(-0.02, 0.45, vDir.y); gl_FragColor = vec4(mix(uFog, uZenith, t), 1.0);
+    #include <colorspace_fragment>
+    }`,
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+// ---------------------------------------------------------------- ground texture atlas
+const atlasImg = await loadImage(`/api/view/atlas?size=256${FLAT ? "&flat=1" : ""}`);
+const LAYERS = atlasImg.height / 256;
+const atlasData = (() => {
+  const cv = document.createElement("canvas");
+  cv.width = 256; cv.height = atlasImg.height;
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(atlasImg, 0, 0);
+  return ctx.getImageData(0, 0, 256, atlasImg.height).data;
+})();
+const atlas = new THREE.DataArrayTexture(new Uint8Array(atlasData.buffer), 256, 256, LAYERS);
+atlas.format = THREE.RGBAFormat;
+atlas.wrapS = atlas.wrapT = THREE.RepeatWrapping;
+atlas.generateMipmaps = true;
+atlas.minFilter = THREE.LinearMipmapLinearFilter;
+atlas.magFilter = THREE.LinearFilter;
+atlas.anisotropy = renderer.capabilities.getMaxAnisotropy();
+atlas.colorSpace = THREE.SRGBColorSpace;
+atlas.needsUpdate = true;
+
+const LUT = new Uint8Array(256);
+for (const [t, i] of Object.entries(meta.tile_layers)) LUT[Number(t)] = i;
+
+function loadImage(url) {
+  return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = url; });
+}
+
+const TERRAIN_SHADERS = {
+  vertexShader: `
+    varying vec2 vTile; varying vec3 vNormal; varying vec3 vWorld;
+    void main() {
+      vTile = uv; vNormal = normal;
+      vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: `
+    precision highp float; precision highp sampler2DArray;
+    uniform sampler2DArray uAtlas; uniform sampler2D uTypes; uniform vec3 uSun; uniform vec3 uFog; uniform float uFogDensity;
+    varying vec2 vTile; varying vec3 vNormal; varying vec3 vWorld;
+    float layerAt(ivec2 c) { return floor(texelFetch(uTypes, c, 0).r * 255.0 + 0.5); }
+    void main() {
+      // Blend the four nearest tiles' textures, sharply, so tile edges soften like the client's.
+      vec2 q = vTile - 0.5; vec2 i = floor(q); vec2 f = q - i;
+      vec2 w = smoothstep(0.32, 0.68, f);
+      ivec2 b = ivec2(i) + 1;
+      vec2 uv = vWorld.xz / ${M.toFixed(1)};
+      vec3 c00 = texture(uAtlas, vec3(uv, layerAt(b))).rgb;
+      vec3 c10 = texture(uAtlas, vec3(uv, layerAt(b + ivec2(1, 0)))).rgb;
+      vec3 c01 = texture(uAtlas, vec3(uv, layerAt(b + ivec2(0, 1)))).rgb;
+      vec3 c11 = texture(uAtlas, vec3(uv, layerAt(b + ivec2(1, 1)))).rgb;
+      vec3 col = mix(mix(c00, c10, w.x), mix(c01, c11, w.x), w.y);
+      float diff = max(dot(normalize(vNormal), uSun), 0.0);
+      vec3 lit = col * (0.42 + 0.85 * diff);
+      float d = length(vWorld - cameraPosition) * uFogDensity;
+      gl_FragColor = vec4(mix(lit, uFog, clamp(d * d * d, 0.0, 1.0)), 1.0);
+      #include <colorspace_fragment>
+    }`,
+};
+const sunUniform = { value: SUN };
+// One small material per chunk; all share the atlas, sun and fog (and the compiled program).
+function terrainMaterial(types) {
+  return new THREE.ShaderMaterial({
+    ...TERRAIN_SHADERS,
+    uniforms: { uAtlas: { value: atlas }, uTypes: { value: types }, uSun: sunUniform, ...fogUniforms },
+  });
+}
+
+// ---------------------------------------------------------------- terrain chunks
+const chunks = new Map();     // "cx,cy" -> {h, t, trees, mesh}
+const pending = new Set();
+const queue = [];
+const indexBuf = (() => {
+  const a = [];
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const v = j * (N + 1) + i;
+    a.push(v, v + N + 1, v + 1, v + 1, v + N + 1, v + N + 2);
+  }
+  return new THREE.BufferAttribute(new Uint32Array(a), 1);
+})();
+
+function parseChunk(buf) {
+  const dv = new DataView(buf);
+  const n = dv.getInt32(0, true);
+  const hn = (n + 3) * (n + 3), tn = (n + 2) * (n + 2);
+  const h = new Int16Array(buf.slice(4, 4 + hn * 2));
+  const t = new Uint8Array(buf, 4 + hn * 2, tn);
+  let off = 4 + hn * 2 + tn;
+  const count = dv.getInt32(off, true); off += 4;
+  const trees = [];
+  for (let i = 0; i < count; i++, off += 12) {
+    trees.push({ x: dv.getFloat32(off, true), y: dv.getFloat32(off + 4, true), t: dv.getUint8(off + 8), a: dv.getUint8(off + 9) });
+  }
+  return { n, h, t: new Uint8Array(t), trees };
+}
+
+function buildChunk(cx, cy, c) {
+  const n = c.n, H = n + 3;
+  const pos = new Float32Array((n + 1) * (n + 1) * 3);
+  const nor = new Float32Array(pos.length);
+  const uv = new Float32Array((n + 1) * (n + 1) * 2);
+  let p = 0, q = 0;
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const hv = (a, b) => c.h[(j + 1 + b) * H + (i + 1 + a)] / 10;
+    pos[p] = (cx * n + i) * SM; pos[p + 1] = hv(0, 0); pos[p + 2] = (cy * n + j) * SM;
+    const dx = (hv(1, 0) - hv(-1, 0)) / (2 * SM), dz = (hv(0, 1) - hv(0, -1)) / (2 * SM);
+    const l = Math.hypot(dx, 1, dz);
+    nor[p] = -dx / l; nor[p + 1] = 1 / l; nor[p + 2] = -dz / l;
+    p += 3;
+    uv[q++] = i; uv[q++] = j;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.setIndex(indexBuf);
+  g.computeBoundingSphere();
+  const lay = new Uint8Array((n + 2) * (n + 2));
+  for (let i = 0; i < lay.length; i++) lay[i] = LUT[c.t[i]];
+  const tex = new THREE.DataTexture(lay, n + 2, n + 2, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.unpackAlignment = 1;
+  tex.needsUpdate = true;
+  const mesh = new THREE.Mesh(g, terrainMaterial(tex));
+  scene.add(mesh);
+  c.mesh = mesh;
+  c.tex = tex;
+}
+
+function dropChunk(key) {
+  const c = chunks.get(key);
+  if (c && c.mesh) {
+    scene.remove(c.mesh);
+    c.mesh.geometry.dispose();
+    c.mesh.material.dispose();
+    c.tex.dispose();
+  }
+  chunks.delete(key);
+}
+
+async function fetchChunk(cx, cy) {
+  const key = `${cx},${cy}`;
+  pending.add(key);
+  try {
+    const r = await fetch(`/api/view/chunk?src=${encodeURIComponent(SRC)}&cx=${cx}&cy=${cy}`);
+    if (!r.ok) throw new Error(`chunk ${key}`);
+    const c = parseChunk(await r.arrayBuffer());
+    chunks.set(key, c);
+    buildChunk(cx, cy, c);
+    treesDirty = true;
+  } catch (e) {
+    console.warn(e);
+  } finally {
+    pending.delete(key);
+  }
+}
+
+let viewDist = 1500;
+// Seen from high up, the horizon is further away: stretch the view (fog, loading) with altitude.
+function effectiveView() { return viewDist + Math.max(0, camera.position.y) * 4; }
+function updateChunks() {
+  const reach = effectiveView() + N * SM;
+  const ccx = camera.position.x / (N * SM), ccy = camera.position.z / (N * SM);
+  const want = [];
+  const r = Math.ceil(reach / (N * SM));
+  for (let cy = Math.floor(ccy) - r; cy <= Math.floor(ccy) + r; cy++) {
+    for (let cx = Math.floor(ccx) - r; cx <= Math.floor(ccx) + r; cx++) {
+      if (cx < 0 || cy < 0 || cx >= CHUNKS || cy >= CHUNKS) continue;
+      const d = Math.hypot((cx + 0.5 - ccx) * N * SM, (cy + 0.5 - ccy) * N * SM);
+      if (d < reach) want.push([d, cx, cy]);
+    }
+  }
+  want.sort((a, b) => a[0] - b[0]);
+  for (const [, cx, cy] of want) {
+    const key = `${cx},${cy}`;
+    if (!chunks.has(key) && !pending.has(key) && pending.size < 6) fetchChunk(cx, cy);
+  }
+  for (const key of [...chunks.keys()]) {
+    const [cx, cy] = key.split(",").map(Number);
+    const d = Math.hypot((cx + 0.5 - ccx) * N * SM, (cy + 0.5 - ccy) * N * SM);
+    if (d > reach * 1.3) { dropChunk(key); treesDirty = true; }
+  }
+  $("h-load").textContent = pending.size ? `${pending.size} chunk${pending.size > 1 ? "s" : ""}…` : `${chunks.size} chunks`;
+}
+
+// Ground height (metres) at a world position in metres, or null if not loaded yet.
+function sampleAt(xm, zm) {
+  const sx = xm / SM, sy = zm / SM;
+  const cx = Math.floor(sx / N), cy = Math.floor(sy / N);
+  const c = chunks.get(`${cx},${cy}`);
+  if (!c) return null;
+  const lx = sx - cx * N, ly = sy - cy * N;
+  const i = Math.min(N - 1, Math.max(0, Math.floor(lx))), j = Math.min(N - 1, Math.max(0, Math.floor(ly)));
+  const fx = lx - i, fy = ly - j, H = c.n + 3;
+  const h = (a, b) => c.h[(j + 1 + b) * H + (i + 1 + a)] / 10;
+  const ground = (h(0, 0) * (1 - fx) + h(1, 0) * fx) * (1 - fy) + (h(0, 1) * (1 - fx) + h(1, 1) * fx) * fy;
+  const corners = [h(0, 0), h(1, 0), h(0, 1), h(1, 1)];
+  return { ground, type: c.t[(j + 1) * (c.n + 2) + (i + 1)], slope: (Math.max(...corners) - Math.min(...corners)) * 10 / K };
+}
+
+// ---------------------------------------------------------------- water
+const water = await (async () => {
+  let wtex = null, ntex = null;
+  if (USE_ART && meta.water) {
+    const tl = new THREE.TextureLoader();
+    [wtex, ntex] = await Promise.all([
+      tl.loadAsync(`/api/view/texture?path=img.texture.terrain.water&size=256`),
+      tl.loadAsync(`/api/view/texture?path=texture/waterDetail_n.png&size=256`).catch(() => null),
+    ]);
+    for (const t of [wtex, ntex]) if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; }
+    wtex.colorSpace = THREE.SRGBColorSpace;
+  }
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTex: { value: wtex }, uNorm: { value: ntex }, uHasTex: { value: wtex ? 1 : 0 }, uTime: { value: 0 },
+      uSun: { value: SUN }, ...fogUniforms },
+    vertexShader: `varying vec3 vWorld; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+    fragmentShader: `
+      uniform sampler2D uTex; uniform sampler2D uNorm; uniform float uHasTex; uniform float uTime; uniform vec3 uSun;
+      uniform vec3 uFog; uniform float uFogDensity; varying vec3 vWorld;
+      void main() {
+        vec2 uv = vWorld.xz / 12.0;
+        vec3 base = vec3(0.10, 0.27, 0.40);
+        vec3 n = vec3(0.0, 1.0, 0.0);
+        if (uHasTex > 0.5) {
+          base = mix(base, texture2D(uTex, uv * 0.5 + uTime * 0.01).rgb, 0.45);
+          vec3 a = texture2D(uNorm, uv + vec2(uTime * 0.02, uTime * 0.013)).rgb * 2.0 - 1.0;
+          vec3 b = texture2D(uNorm, uv * 0.7 - vec2(uTime * 0.015, -uTime * 0.01)).rgb * 2.0 - 1.0;
+          n = normalize(vec3(a.x + b.x, 2.5, a.y + b.y));
+        }
+        vec3 v = normalize(cameraPosition - vWorld);
+        float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+        float spec = pow(max(dot(reflect(-uSun, n), v), 0.0), 80.0);
+        vec3 col = mix(base * (0.55 + 0.6 * max(dot(n, uSun), 0.0)), uFog, fres * 0.6) + spec * 0.8;
+        float d = length(vWorld - cameraPosition) * uFogDensity;
+        gl_FragColor = vec4(mix(col, uFog, clamp(d * d * d, 0.0, 1.0)), mix(0.72, 0.95, fres));
+        #include <colorspace_fragment>
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 2;
+  scene.add(m);
+  return m;
+})();
+
+// ---------------------------------------------------------------- trees and bushes
+// Near: the client's own models. Far: camera-facing impostors rendered from those models.
+const species = new Map();   // tile byte -> {near: [InstancedMesh], far: InstancedMesh, h, w}
+const CONIFERS = new Set([101, 112, 103]);
+let treesDirty = true, treeDist = 700, nearDist = 150;
+const lastTreePos = new THREE.Vector3(1e9, 0, 0);
+
+function b64(s, Type) { const b = atob(s); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Type(u.buffer); }
+
+function fallbackModel(t) {
+  const bush = meta.bushes.includes(t);
+  const col = new THREE.Color(meta.tree_colors[t] || "#2f5a28");
+  const trunk = new THREE.CylinderGeometry(0.03, 0.05, 0.5, 6).translate(0, 0.25, 0);
+  const crown = CONIFERS.has(t) ? new THREE.ConeGeometry(0.35, 1.0, 8).translate(0, 0.8, 0)
+    : new THREE.IcosahedronGeometry(0.42, 1).translate(0, 0.85, 0);
+  const parts = bush ? [[new THREE.IcosahedronGeometry(0.35, 1).translate(0, 0.3, 0), col]]
+    : [[trunk, new THREE.Color(0x5b4632)], [crown, col]];
+  return parts.map(([g, c]) => ({ geometry: g, material: new THREE.MeshLambertMaterial({ color: c }) }));
+}
+
+async function loadModel(t) {
+  if (!USE_ART || !meta.models[t]) return fallbackModel(t);
+  try {
+    const r = await fetch(`/api/view/model?type=${t}`);
+    const m = await r.json();
+    const tl = new THREE.TextureLoader();
+    return await Promise.all(m.meshes.map(async (mesh) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(b64(mesh.positions, Float32Array), 3));
+      g.setAttribute("normal", new THREE.BufferAttribute(b64(mesh.normals, Float32Array), 3));
+      g.setAttribute("uv", new THREE.BufferAttribute(b64(mesh.uvs, Float32Array), 2));
+      g.setIndex(new THREE.BufferAttribute(b64(mesh.indices, Uint16Array), 1));
+      let map = null;
+      if (mesh.texture) {
+        map = await tl.loadAsync(`/api/view/texture?path=${encodeURIComponent(mesh.texture)}&size=512`);
+        map.flipY = false;   // DDS rows are stored top-down, as the client uploads them
+        map.wrapS = map.wrapT = THREE.RepeatWrapping;   // some models (e.g. oleander) tile their texture
+        map.colorSpace = THREE.SRGBColorSpace;
+        map.anisotropy = 4;
+      }
+      return { geometry: g, material: new THREE.MeshLambertMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide }) };
+    }));
+  } catch (e) {
+    console.warn("model", t, e);
+    return fallbackModel(t);
+  }
+}
+
+// Render a species once from the side into a texture, for distant trees.
+function makeImpostor(parts) {
+  const box = new THREE.Box3();
+  const group = new THREE.Group();
+  for (const p of parts) { const m = new THREE.Mesh(p.geometry, p.material); group.add(m); box.expandByObject(m); }
+  const size = box.getSize(new THREE.Vector3());
+  const w = Math.max(size.x, size.z) * 1.05, h = size.y * 1.02;
+  const rt = new THREE.WebGLRenderTarget(256, 256, { samples: 4 });
+  rt.texture.colorSpace = THREE.SRGBColorSpace;
+  const cam = new THREE.OrthographicCamera(-w / 2, w / 2, box.max.y + 0.01, box.min.y, -10, 10);
+  cam.position.set(0, 0, 5);
+  const s = new THREE.Scene();
+  s.add(group, new THREE.HemisphereLight(0xffffff, 0x777766, 1.3));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(0.3, 0.8, 1); s.add(dl);
+  const prevClear = renderer.getClearColor(new THREE.Color()), prevAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(s, cam);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(prevClear, prevAlpha);
+  const geo = new THREE.PlaneGeometry(w, box.max.y - box.min.y).translate(0, (box.max.y + box.min.y) / 2, 0);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uMap: { value: rt.texture }, ...fogUniforms },
+    vertexShader: `
+      varying vec2 vUv; varying vec3 vWorld;
+      void main() {
+        vUv = uv;
+        vec3 c = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float sx = length(instanceMatrix[0].xyz), sy = length(instanceMatrix[1].xyz);
+        vec3 to = cameraPosition - c; to.y = 0.0;
+        vec3 right = normalize(vec3(to.z, 0.0, -to.x) + 1e-5);
+        vec3 p = c + right * position.x * sx + vec3(0.0, position.y * sy, 0.0);
+        vWorld = p;
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform sampler2D uMap; uniform vec3 uFog; uniform float uFogDensity; varying vec2 vUv; varying vec3 vWorld;
+      void main() {
+        vec4 c = texture2D(uMap, vUv);
+        if (c.a < 0.5) discard;
+        float d = length(vWorld - cameraPosition) * uFogDensity;
+        gl_FragColor = vec4(mix(c.rgb, uFog, clamp(d * d * d, 0.0, 1.0)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  return { geo, mat };
+}
+
+function getSpecies(t) {
+  if (species.has(t)) return species.get(t);
+  const sp = { ready: false, near: [], far: null };
+  species.set(t, sp);
+  loadModel(t).then((parts) => {
+    for (const p of parts) {
+      const im = new THREE.InstancedMesh(p.geometry, p.material, 4096);
+      im.count = 0; im.frustumCulled = false;
+      scene.add(im); sp.near.push(im);
+    }
+    const imp = makeImpostor(parts);
+    sp.far = new THREE.InstancedMesh(imp.geo, imp.mat, 16384);
+    sp.far.count = 0; sp.far.frustumCulled = false;
+    scene.add(sp.far);
+    sp.ready = true;
+    treesDirty = true;
+  });
+  return sp;
+}
+
+function hash(x, y) { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); }
+
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+function rebuildTrees() {
+  treesDirty = false;
+  lastTreePos.copy(camera.position);
+  const counts = new Map();
+  const cam = camera.position;
+  const reach = treeDist + N * SM;
+  for (const [key, c] of chunks) {
+    const [cx, cy] = key.split(",").map(Number);
+    if (Math.hypot((cx + 0.5) * N * SM - cam.x, (cy + 0.5) * N * SM - cam.z) > reach) continue;
+    for (const tr of c.trees) {
+      const xm = tr.x * M, zm = tr.y * M;
+      const d = Math.hypot(xm - cam.x, zm - cam.z);
+      if (d > treeDist) continue;
+      const sp = getSpecies(tr.t);
+      if (!sp.ready) continue;
+      const g = sampleAt(xm, zm);
+      if (!g) continue;
+      const bush = meta.bushes.includes(tr.t);
+      // Client: scale = (age + 1) per axis with +-10% jitter; bushes a quarter of that.
+      const base = (tr.a + 1) * (bush ? 0.25 : 1);
+      const r1 = hash(tr.x, tr.y), r2 = hash(tr.y, tr.x), r3 = hash(tr.x + 1.7, tr.y - 3.1);
+      tmpS.set(base * (0.9 + 0.2 * r1), base * (0.9 + 0.2 * r2), base * (0.9 + 0.2 * r3));
+      tmpQ.setFromAxisAngle(UP, r1 * Math.PI * 2);
+      tmpP.set(xm, g.ground, zm);
+      tmpM.compose(tmpP, tmpQ, tmpS);
+      const near = d < nearDist;
+      const cnt = counts.get(tr.t) || { near: 0, far: 0 };
+      counts.set(tr.t, cnt);
+      if (near) {
+        if (cnt.near >= 4096) continue;
+        for (const im of sp.near) im.setMatrixAt(cnt.near, tmpM);
+        cnt.near++;
+      } else {
+        if (cnt.far >= 16384) continue;
+        sp.far.setMatrixAt(cnt.far++, tmpM);
+      }
+    }
+  }
+  for (const [t, sp] of species) {
+    if (!sp.ready) continue;
+    const cnt = counts.get(t) || { near: 0, far: 0 };
+    for (const im of sp.near) { im.count = cnt.near; im.instanceMatrix.needsUpdate = true; }
+    sp.far.count = cnt.far; sp.far.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// ---------------------------------------------------------------- spawn markers
+for (const [i, s] of meta.spawns.entries()) {
+  const col = new THREE.Color(SPAWNS[i][2]);
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 60, 12, 1, true).translate(0, 30, 0),
+    new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }));
+  pillar.position.set((s[0] + 0.5) * M, 0, (s[1] + 0.5) * M);
+  pillar.userData.spawn = s;
+  scene.add(pillar);
+  s.pillar = pillar;
+}
+
+// ---------------------------------------------------------------- controls
+const keys = new Set();
+let yaw = 0, pitch = -0.1, mode = "walk", flySpeed = 40, vy = 0, grounded = false, placed = false;
+addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  keys.add(e.code);
+  if (e.code === "KeyF") { mode = mode === "walk" ? "fly" : "walk"; vy = 0; }
+  if (e.code === "KeyM") for (const id of ["side", "hud", "help"]) $(id).hidden = !$(id).hidden;
+  if (e.code === "Space") e.preventDefault();
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("blur", () => keys.clear());
+const canvas = $("view");
+$("start").onclick = () => canvas.requestPointerLock();
+canvas.onclick = () => canvas.requestPointerLock();
+document.addEventListener("pointerlockchange", () => { $("start").hidden = document.pointerLockElement === canvas || $("start").dataset.used === "1"; if (document.pointerLockElement === canvas) $("start").dataset.used = "1"; });
+document.addEventListener("mousemove", (e) => {
+  if (document.pointerLockElement !== canvas) return;
+  yaw -= e.movementX * 0.0022;
+  pitch = Math.max(-1.55, Math.min(1.55, pitch - e.movementY * 0.0022));
+});
+addEventListener("wheel", (e) => { flySpeed = Math.max(5, Math.min(800, flySpeed * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); }, { passive: true });
+
+function teleport(tx, ty, faceCentre = true) {
+  const xm = (tx + 0.5) * M, zm = (ty + 0.5) * M;
+  camera.position.set(xm, 300, zm);
+  placed = false; vy = 0;
+  if (faceCentre) yaw = Math.atan2(-(WORLD_M / 2 - xm), -(WORLD_M / 2 - zm));
+  updateChunks();
+}
+
+function step(dt) {
+  const fast = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const move = new THREE.Vector3();
+  if (keys.has("KeyW") || keys.has("ArrowUp")) move.add(fwd);
+  if (keys.has("KeyS") || keys.has("ArrowDown")) move.sub(fwd);
+  if (keys.has("KeyD") || keys.has("ArrowRight")) move.add(right);
+  if (keys.has("KeyA") || keys.has("ArrowLeft")) move.sub(right);
+  if (move.lengthSq() > 0) move.normalize();
+  const here = sampleAt(camera.position.x, camera.position.z);
+  if (mode === "fly") {
+    const v = flySpeed * (fast ? 4 : 1);
+    if (move.lengthSq() > 0 && (keys.has("KeyW") || keys.has("KeyS"))) {
+      // Fly where you look.
+      const look = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+      const f = keys.has("KeyW") ? 1 : -1;
+      camera.position.addScaledVector(look, f * v * dt);
+      const side = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+      camera.position.addScaledVector(right, side * v * dt);
+    } else camera.position.addScaledVector(move, v * dt);
+    if (keys.has("Space")) camera.position.y += v * dt;
+    if (keys.has("KeyC") || keys.has("ControlLeft")) camera.position.y -= v * dt;
+    if (here) camera.position.y = Math.max(camera.position.y, Math.max(here.ground, 0) + 0.8);
+    placed = true;
+  } else {
+    if (!here) return;   // wait for the ground to load
+    const swimming = here.ground < -1.2;
+    const v = (swimming ? 2 : fast ? 9 : 4.5);
+    camera.position.addScaledVector(move, v * dt);
+    const g = sampleAt(camera.position.x, camera.position.z) || here;
+    const floor = swimming ? -1.4 : g.ground;
+    let feet = camera.position.y - EYE;
+    if (!placed) { feet = floor; placed = true; }
+    if (swimming) { feet = floor; vy = 0; grounded = true; }
+    else {
+      vy -= 22 * dt;
+      feet += vy * dt;
+      grounded = feet <= floor + 0.02;
+      if (grounded) { feet = floor; vy = 0; }
+      if (grounded && keys.has("Space")) vy = 6;
+    }
+    camera.position.y = feet + EYE;
+  }
+  camera.position.x = Math.max(-200, Math.min(WORLD_M + 200, camera.position.x));
+  camera.position.z = Math.max(-200, Math.min(WORLD_M + 200, camera.position.z));
+}
+
+// ---------------------------------------------------------------- HUD, minimap, panel
+const typeNames = meta.type_names;
+let fpsT = 0, fpsN = 0;
+function updateHud(dt) {
+  fpsT += dt; fpsN++;
+  if (fpsT > 0.5) { $("h-fps").textContent = Math.round(fpsN / fpsT); fpsT = 0; fpsN = 0; }
+  const tx = Math.floor(camera.position.x / M), ty = Math.floor(camera.position.z / M);
+  $("h-tile").textContent = `${tx}, ${ty}`;
+  const s = sampleAt(camera.position.x, camera.position.z);
+  if (s) {
+    $("h-ground").textContent = `${s.ground.toFixed(1)} m${s.ground < 0 ? " (under water)" : ""}`;
+    $("h-type").textContent = typeNames[s.type] || `type ${s.type}`;
+    $("h-slope").textContent = `${Math.round(s.slope)} dm/tile${s.slope > 40 ? " · steep" : ""}`;
+  }
+  $("h-mode").textContent = mode === "fly" ? `Flying · ${Math.round(flySpeed)} m/s` : "Walking";
+  drawMinimap();
+}
+
+const mm = $("minimap"), mctx = mm.getContext("2d");
+const mmImg = await loadImage(`/api/view/minimap?src=${encodeURIComponent(SRC)}`).catch(() => null);
+function drawMinimap() {
+  mctx.clearRect(0, 0, mm.width, mm.height);
+  if (mmImg) mctx.drawImage(mmImg, 0, 0, mm.width, mm.height);
+  const sc = mm.width / WORLD_M;
+  for (const [i, s] of meta.spawns.entries()) {
+    mctx.fillStyle = SPAWNS[i][2]; mctx.strokeStyle = "#fff"; mctx.lineWidth = 1.5;
+    mctx.beginPath(); mctx.arc((s[0] + 0.5) * M * sc, (s[1] + 0.5) * M * sc, 4, 0, Math.PI * 2); mctx.fill(); mctx.stroke();
+  }
+  const x = camera.position.x * sc, y = camera.position.z * sc;
+  mctx.save(); mctx.translate(x, y); mctx.rotate(-yaw);
+  mctx.fillStyle = "#ffd166"; mctx.strokeStyle = "#000"; mctx.lineWidth = 1;
+  mctx.beginPath(); mctx.moveTo(0, -8); mctx.lineTo(5, 5); mctx.lineTo(0, 2); mctx.lineTo(-5, 5); mctx.closePath(); mctx.fill(); mctx.stroke();
+  mctx.restore();
+}
+mm.onclick = (e) => {
+  const r = mm.getBoundingClientRect();
+  teleport(Math.floor((e.clientX - r.left) / r.width * meta.world), Math.floor((e.clientY - r.top) / r.height * meta.world), false);
+};
+
+$("src-label").textContent = meta.label + (USE_ART ? "" : " · plain colours");
+$("art-note").textContent = meta.client ? (FLAT ? "Showing plain colours." : "Textures and trees come from your Wurm client install.")
+  : "Wurm client not found, so plain colours are shown. Install Wurm Unlimited to see game textures.";
+$("c-tex").checked = USE_ART;
+$("c-tex").disabled = !meta.client;
+$("c-tex").onchange = () => { params.set("flat", $("c-tex").checked ? "0" : "1"); location.search = params.toString(); };
+fetch("/api/meta").then((r) => r.json()).then((m) => {
+  const sel = $("source");
+  const opts = [["preview", "Current preview"]].concat(m.worlds.filter((w) => w.has_map).map((w) => [`world:${w.name}`, `World: ${w.name}`]));
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+  sel.value = SRC;
+  sel.onchange = () => { params.set("src", sel.value); location.search = params.toString(); };
+});
+$("spawn-btns").innerHTML = meta.spawns.map((s, i) =>
+  `<button class="spawn" data-i="${i}" style="color:${SPAWNS[i][2]}" title="${SPAWNS[i][1]} spawn (${s[0]}, ${s[1]})">${SPAWNS[i][0]}</button>`).join("")
+  + `<button id="centre">Centre</button>`;
+$("spawn-btns").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "centre") teleport(meta.world / 2, meta.world / 2, false);
+  else { const s = meta.spawns[Number(b.dataset.i)]; teleport(s[0], s[1]); }
+};
+$("goto-btn").onclick = () => {
+  const m = $("goto").value.match(/(-?\d+)\D+(-?\d+)/);
+  if (m) teleport(Number(m[1]), Number(m[2]), false);
+};
+$("goto").onkeydown = (e) => { if (e.key === "Enter") $("goto-btn").click(); };
+
+function bindRange(id, out, fmt, set) {
+  const r = $(id);
+  const f = () => { $(out).textContent = fmt(Number(r.value)); set(Number(r.value)); };
+  r.oninput = f; f();
+}
+bindRange("r-view", "o-view", (v) => `${v} m`, (v) => { viewDist = v; updateChunks(); });
+bindRange("r-trees", "o-trees", (v) => `${v} m`, (v) => { treeDist = v; treesDirty = true; });
+bindRange("r-near", "o-near", (v) => v ? `${v} m` : "off", (v) => { nearDist = v; treesDirty = true; });
+
+addEventListener("resize", () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+});
+
+// ---------------------------------------------------------------- start and loop
+const start = meta.spawns[0] || [meta.world / 2, meta.world / 2];
+teleport(start[0], start[1]);
+if (params.get("x") && params.get("y")) teleport(Number(params.get("x")), Number(params.get("y")), false);
+let last = performance.now(), chunkTimer = 0;
+let lastError = "";
+function frame(now) {
+  requestAnimationFrame(frame);
+  try {
+    tick(now);
+  } catch (e) {
+    // Keep running; report each distinct problem once.
+    if (String(e) !== lastError) { lastError = String(e); console.error("viewer frame:", e); }
+  }
+}
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  step(dt);
+  camera.rotation.set(pitch, yaw, 0);
+  chunkTimer += dt;
+  if (chunkTimer > 0.25) { chunkTimer = 0; updateChunks(); }
+  if (treesDirty || camera.position.distanceTo(lastTreePos) > Math.max(8, nearDist * 0.15)) rebuildTrees();
+  const ev = effectiveView();
+  fogUniforms.uFogDensity.value = 1 / ev;  // fog ramps in over the last part of the view
+  if (Math.abs(camera.far - (ev * 1.2 + 500)) > 50) { camera.far = ev * 1.2 + 500; camera.updateProjectionMatrix(); }
+  const span = ev * 3;
+  water.position.set(camera.position.x, 0, camera.position.z);
+  water.scale.set(span, span, 1);
+  water.material.uniforms.uTime.value = now / 1000;
+  sky.position.copy(camera.position);
+  updateHud(dt);
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+window.__viewer = { camera, chunks, species, meta, teleport, tick, setMode: (m) => { mode = m; }, look: (y, p) => { yaw = y; pitch = p; } };
+</script>
+</body>
+</html>

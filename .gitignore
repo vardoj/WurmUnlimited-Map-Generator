@@ -1,0 +1,10 @@
+# Build output: the app is built with build_app.py (and published as a release, not committed)
+*.exe
+*.spec
+build/
+__pycache__/
+*.pyc
+
+# Local data: your own presets and uploaded heightmaps
+presets/
+imports/
